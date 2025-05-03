@@ -18,22 +18,30 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     // We only initiate the socket connection once
     if (!socket) {
-      // In dev, use explicit localhost:3000 (port where socket server runs), in production use relative path
+      // In dev, use explicit localhost:3000, in production use relative path
       const socketUrl = process.env.NODE_ENV === 'production' 
         ? window.location.origin 
         : 'http://localhost:3000';
+
+      // Socket path differs between development and production (Vercel)
+      const socketPath = process.env.NODE_ENV === 'production'
+        ? '/api/socketio'  // Use the socketio handler for Vercel
+        : '/api/socket';   // Use the socket handler for local development
       
-      console.log(`Connecting to Socket.IO server at ${socketUrl}`);
+      console.log(`Connecting to Socket.IO server at ${socketUrl} with path ${socketPath}`);
       
       // Create socket instance but don't connect yet
       const socketInstance = io(socketUrl, {
-        path: '/api/socket',
+        path: socketPath,
         autoConnect: false,
-        transports: ['websocket', 'polling'], // Try WebSocket first, fallback to polling
+        // Try polling first in production, which works better in Vercel's serverless environment
+        transports: process.env.NODE_ENV === 'production' 
+          ? ['polling', 'websocket'] 
+          : ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
-        timeout: 20000 // Increase timeout
+        timeout: 20000
       });
 
       // Debug connection issues
@@ -66,7 +74,7 @@ export const SocketProvider = ({ children }) => {
 
       // Handle previous messages when joining a room
       socketInstance.on('previousMessages', (previousMessages) => {
-        console.log('Received previous messages:', previousMessages.length);
+        console.log('Received previous messages:', previousMessages?.length);
         setMessages(previousMessages || []);
       });
 
