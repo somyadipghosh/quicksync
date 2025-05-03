@@ -116,16 +116,29 @@ const Room = () => {
             <div className="lg:col-span-1 bg-white shadow-sm rounded-lg p-4 h-[70vh] overflow-y-auto">
               <h3 className="font-bold mb-4">Participants</h3>
               <ul>
+                {/* Current user always shown at top */}
                 <li className="py-2 border-b border-gray-100 flex items-center justify-between">
                   <div>
-                    <span className="font-medium">{user.name}</span>
+                    <span className="font-medium">{user.name} (You)</span>
                     {isRoomCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
                   </div>
                 </li>
-                {/* For demo purposes - In a real app, this would be populated from roomUsers */}
-                <li className="py-2 border-b border-gray-100">
-                  <span className="font-medium">John (You)</span>
-                </li>
+                
+                {/* Other users in the room */}
+                {roomUsers.length > 0 ? 
+                  roomUsers
+                    .filter(roomUser => roomUser.id !== user.id)
+                    .map((roomUser, index) => (
+                      <li key={index} className="py-2 border-b border-gray-100">
+                        <span className="font-medium">{roomUser.name}</span>
+                        {roomUser.isCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
+                      </li>
+                    ))
+                  : 
+                  <li className="py-2 text-gray-500 text-sm italic">
+                    No other participants yet
+                  </li>
+                }
               </ul>
             </div>
           )}
