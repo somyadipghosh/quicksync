@@ -21,135 +21,125 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     // We only initiate the socket connection once
     if (!socket) {
-      // In dev, use explicit localhost:3000, in production use relative path
-      const socketUrl = process.env.NODE_ENV === 'production' 
-        ? window.location.origin 
-        : 'http://localhost:3000';
-
-      // Socket path differs between development and production (Vercel)
-      const socketPath = process.env.NODE_ENV === 'production'
-        ? '/api/io'  // Use our io handler for Vercel
-        : '/api/socket';   // Use the socket handler for local development
+      console.log('Initializing socket connection...');
       
-      console.log(`Connecting to Socket.IO server at ${socketUrl} with path ${socketPath}`);
-      
-      // Create socket instance with improved settings for stability
-      const socketInstance = io(socketUrl, {
-        path: socketPath,
-        autoConnect: false,
-        // Always use polling first in production for greater stability
-        transports: process.env.NODE_ENV === 'production' 
-          ? ['polling'] 
-          : ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: 20,  // Increased attempts
-        reconnectionDelay: 2000,   // Longer delay between attempts
-        reconnectionDelayMax: 10000, // Max delay is 10 seconds
-        timeout: 60000,            // Full minute timeout
-        forceNew: true,
-        // Much more aggressive ping settings to maintain connection
-        pingInterval: 15000,       // Check connection every 15 seconds
-        pingTimeout: 10000         // Wait 10 seconds for response
-      });
+      try {
+        // Create a socket instance with correct configuration
+        const socketInstance = io({
+          path: '/api/socket-handler',
+          autoConnect: true,
+          transports: ['polling', 'websocket'],
+          reconnection: true,
+          reconnectionAttempts: 20,
+          reconnectionDelay: 2000,
+          reconnectionDelayMax: 10000,
+          timeout: 60000,
+          forceNew: true
+        });
 
-      // Debug connection issues
-      socketInstance.on('connect', () => {
-        console.log('Socket connected successfully with ID:', socketInstance.id);
-        setIsConnected(true);
-        setConnectionError(null);
-        reconnectAttempts.current = 0;
-        lastPingTime.current = Date.now();
-      });
-
-      socketInstance.on('connect_error', (err) => {
-        console.error('Socket connection error:', err.message, 'Attempt:', reconnectAttempts.current);
-        setConnectionError(`${err.message}`);
-        reconnectAttempts.current += 1;
+        console.log('Socket instance created with path: /api/socket-handler');
         
-        // Always use polling if we have multiple failures
-        if (reconnectAttempts.current > 3) {
-          console.log('Multiple reconnection failures, switching to polling only...');
-          socketInstance.io.opts.transports = ['polling'];
-        }
-      });
+        // Debug connection events
+        socketInstance.on('connect', () => {
+          console.log('Socket connected successfully with ID:', socketInstance.id);
+          setIsConnected(true);
+          setConnectionError(null);
+          reconnectAttempts.current = 0;
+          lastPingTime.current = Date.now();
+        });
 
-      // Handle pong responses to track connection health
-      socketInstance.io.engine.on('pong', () => {
-        lastPingTime.current = Date.now();
-      });
-
-      socketInstance.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
-        setIsConnected(false);
-        
-        if (reason === 'io server disconnect') {
-          // Server disconnected us, try to reconnect manually
-          console.log('Server disconnected us, attempting to reconnect...');
-          setTimeout(() => socketInstance.connect(), 3000);
-        }
-        
-        if (reason === 'ping timeout' || reason === 'transport close' || reason === 'transport error') {
-          // Connection issues, try to reconnect with polling only
-          console.log('Connection timeout/transport issue, switching to polling...');
-          socketInstance.io.opts.transports = ['polling'];
-          setTimeout(() => socketInstance.connect(), 2000);
-        }
-      });
-
-      // Handle incoming messages
-      socketInstance.on('message', (message) => {
-        setMessages(prev => [...prev, message]);
-      });
-
-      // Handle previous messages when joining a room
-      socketInstance.on('previousMessages', (previousMessages) => {
-        console.log('Received previous messages:', previousMessages?.length);
-        setMessages(previousMessages || []);
-      });
-
-      // Handle room users updates
-      socketInstance.on('roomUsers', (users) => {
-        console.log('Room users updated:', users?.length || 0);
-        setRoomUsers(users || []);
-      });
-
-      // Handle room ended by creator
-      socketInstance.on('roomEnded', () => {
-        alert('This room has been ended by the host.');
-        window.location.href = '/rooms';
-      });
-
-      setSocket(socketInstance);
-      
-      // Set up a more aggressive ping interval to keep connection alive
-      pingIntervalRef.current = setInterval(() => {
-        if (socketInstance && socketInstance.connected) {
-          console.log('Sending ping to keep connection alive');
+        socketInstance.on('connect_error', (err) => {
+          console.error('Socket connection error:', err.message, 'Attempt:', reconnectAttempts.current);
+          setConnectionError(`${err.message}`);
+          reconnectAttempts.current += 1;
           
-          // Ping the server via our own endpoint (always works even when socket is struggling)
-          fetch(`${window.location.origin}/api/ping`)
-            .then(res => res.json())
-            .catch(() => {}); // Ignore errors
-            
-          // Check if the connection seems stale (no pong in 30 seconds)
-          const timeSinceLastPong = Date.now() - lastPingTime.current;
-          if (timeSinceLastPong > 30000 && isConnected) {
-            console.log('Connection may be stale, attempting reconnection...');
-            socketInstance.disconnect().connect(); // Force reconnection cycle
+          // Always use polling if we have multiple failures
+          if (reconnectAttempts.current > 3) {
+            console.log('Multiple reconnection failures, switching to polling only...');
+            socketInstance.io.opts.transports = ['polling'];
           }
-        }
-      }, 15000); // Every 15 seconds
-      
-      return () => {
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-        }
+        });
+
+        // Handle pong responses to track connection health
+        socketInstance.io.engine.on('pong', () => {
+          lastPingTime.current = Date.now();
+        });
+
+        socketInstance.on('disconnect', (reason) => {
+          console.log('Socket disconnected:', reason);
+          setIsConnected(false);
+          
+          if (reason === 'io server disconnect') {
+            // Server disconnected us, try to reconnect manually
+            console.log('Server disconnected us, attempting to reconnect...');
+            setTimeout(() => socketInstance.connect(), 3000);
+          }
+          
+          if (reason === 'ping timeout' || reason === 'transport close' || reason === 'transport error') {
+            // Connection issues, try to reconnect with polling only
+            console.log('Connection timeout/transport issue, switching to polling...');
+            socketInstance.io.opts.transports = ['polling'];
+            setTimeout(() => socketInstance.connect(), 2000);
+          }
+        });
+
+        // Handle incoming messages
+        socketInstance.on('message', (message) => {
+          setMessages(prev => [...prev, message]);
+        });
+
+        // Handle previous messages when joining a room
+        socketInstance.on('previousMessages', (previousMessages) => {
+          console.log('Received previous messages:', previousMessages?.length);
+          setMessages(previousMessages || []);
+        });
+
+        // Handle room users updates
+        socketInstance.on('roomUsers', (users) => {
+          console.log('Room users updated:', users?.length || 0);
+          setRoomUsers(users || []);
+        });
+
+        // Handle room ended by creator
+        socketInstance.on('roomEnded', () => {
+          alert('This room has been ended by the host.');
+          window.location.href = '/rooms';
+        });
+
+        setSocket(socketInstance);
         
-        if (socketInstance) {
-          console.log('Cleaning up socket connection');
-          socketInstance.disconnect();
-        }
-      };
+        // Set up a more aggressive ping interval to keep connection alive
+        pingIntervalRef.current = setInterval(() => {
+          if (socketInstance && socketInstance.connected) {
+            console.log('Sending ping to keep connection alive');
+            
+            // Ping the server via our own endpoint (always works even when socket is struggling)
+            fetch(`${window.location.origin}/api/ping`)
+              .then(res => res.json())
+              .catch(() => {}); // Ignore errors
+              
+            // Check if the connection seems stale (no pong in 30 seconds)
+            const timeSinceLastPong = Date.now() - lastPingTime.current;
+            if (timeSinceLastPong > 30000 && isConnected) {
+              console.log('Connection may be stale, attempting reconnection...');
+              socketInstance.disconnect().connect(); // Force reconnection cycle
+            }
+          }
+        }, 15000); // Every 15 seconds
+        
+        return () => {
+          if (pingIntervalRef.current) {
+            clearInterval(pingIntervalRef.current);
+          }
+          
+          if (socketInstance) {
+            console.log('Cleaning up socket connection');
+            socketInstance.disconnect();
+          }
+        };
+      } catch (error) {
+        console.error('Error initializing socket:', error);
+      }
     }
   }, []);
 

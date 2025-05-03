@@ -14,7 +14,7 @@ export default function ioHandler(req, res) {
 
   console.log('Setting up Socket.IO');
   const io = new Server(res.socket.server, {
-    path: '/api/io',
+    path: '/api/socket-handler',  // UPDATED: Match the path in SocketContext.jsx
     addTrailingSlash: false,
     cors: {
       origin: '*',
