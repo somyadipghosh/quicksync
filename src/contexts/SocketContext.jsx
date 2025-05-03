@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useRef } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useUserContext } from './UserContext';
 
@@ -13,88 +13,68 @@ export const SocketProvider = ({ children }) => {
   const [messages, setMessages] = useState([]);
   const [roomUsers, setRoomUsers] = useState([]);
   const { user, room } = useUserContext();
-  const reconnectAttempts = useRef(0);
-  const pingIntervalRef = useRef(null);
 
   // Initialize socket connection
   useEffect(() => {
     if (!socket) {
-      console.log('Creating new socket connection...');
-      
-      try {
-        // Use a simple configuration that works in both development and production
-        const socketInstance = io(window.location.origin, {
-          path: '/api/socket-handler',
-          reconnectionAttempts: 5,
-          reconnectionDelay: 1000,
-          timeout: 20000
-        });
-        
-        socketInstance.on('connect', () => {
-          console.log('Socket connected with ID:', socketInstance.id);
-          setIsConnected(true);
-          setConnectionError(null);
-          reconnectAttempts.current = 0;
-        });
+      // Create socket instance with minimal configuration
+      const newSocket = io({
+        autoConnect: true,
+        reconnection: true,
+        reconnectionAttempts: 5
+      });
 
-        socketInstance.on('connect_error', (err) => {
-          console.error('Socket connection error:', err.message);
-          setConnectionError(`Connection error: ${err.message}`);
-          reconnectAttempts.current += 1;
-        });
+      // Set up event handlers
+      newSocket.on('connect', () => {
+        console.log('Socket connected:', newSocket.id);
+        setIsConnected(true);
+        setConnectionError(null);
+      });
 
-        socketInstance.on('disconnect', (reason) => {
-          console.log('Socket disconnected:', reason);
-          setIsConnected(false);
-        });
+      newSocket.on('connect_error', (err) => {
+        console.error('Socket connection error:', err.message);
+        setConnectionError(`Connection error: ${err.message}`);
+      });
 
-        // Handle incoming messages
-        socketInstance.on('message', (message) => {
-          setMessages(prev => [...prev, message]);
-        });
+      newSocket.on('disconnect', (reason) => {
+        console.log('Socket disconnected:', reason);
+        setIsConnected(false);
+      });
 
-        // Handle previous messages when joining a room
-        socketInstance.on('previousMessages', (previousMessages) => {
-          console.log('Received previous messages:', previousMessages?.length || 0);
-          setMessages(previousMessages || []);
-        });
+      newSocket.on('message', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
 
-        // Handle room users updates
-        socketInstance.on('roomUsers', (users) => {
-          console.log('Room users updated:', users?.length || 0);
-          setRoomUsers(users || []);
-        });
+      newSocket.on('previousMessages', (previousMessages) => {
+        console.log('Received previous messages:', previousMessages?.length || 0);
+        setMessages(previousMessages || []);
+      });
 
-        // Handle room ended by creator
-        socketInstance.on('roomEnded', () => {
-          alert('This room has been ended by the host.');
-          window.location.href = '/rooms';
-        });
+      newSocket.on('roomUsers', (users) => {
+        console.log('Room users updated:', users?.length || 0);
+        setRoomUsers(users || []);
+      });
 
-        setSocket(socketInstance);
-      } catch (error) {
-        console.error('Error initializing socket:', error);
-        setConnectionError(`Initialization error: ${error.message}`);
-      }
-      
+      newSocket.on('roomEnded', () => {
+        alert('This room has been ended by the host.');
+        window.location.href = '/rooms';
+      });
+
+      setSocket(newSocket);
+
+      // Cleanup on unmount
       return () => {
-        if (socket) {
-          console.log('Cleaning up socket connection');
-          socket.disconnect();
-        }
+        newSocket.disconnect();
       };
     }
   }, []);
 
   // Join/leave room when user or room changes
   useEffect(() => {
-    if (socket && user && room) {
+    if (socket && isConnected && user && room) {
       console.log(`Joining room ${room} as ${user.name}`);
-      
-      // Join the room
       socket.emit('joinRoom', { user, roomId: room });
-      
-      // Clean up when leaving room
+
       return () => {
         if (socket.connected && room) {
           console.log(`Leaving room ${room}`);
@@ -102,9 +82,8 @@ export const SocketProvider = ({ children }) => {
         }
       };
     }
-  }, [socket, user, room]);
+  }, [socket, isConnected, user, room]);
 
-  // Message sending function
   const sendMessage = (text) => {
     if (socket && isConnected && user && room) {
       const messageData = {
@@ -118,7 +97,6 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
-  // Document sharing function
   const shareDocument = (document) => {
     if (socket && isConnected && user && room) {
       const documentData = {
@@ -132,7 +110,6 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
-  // Room ending function
   const endRoom = () => {
     if (socket && isConnected && room) {
       socket.emit('endRoom', { roomId: room });
