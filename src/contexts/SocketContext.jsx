@@ -13,45 +13,74 @@ export const SocketProvider = ({ children }) => {
   const [roomUsers, setRoomUsers] = useState([]);
   const { user, room } = useUserContext();
 
+  // Initialize socket connection
   useEffect(() => {
-    // For demo purposes using a mock server (would need an actual backend in production)
-    const socketInstance = io('https://mock-socket-server.example', {
-      autoConnect: false,
-    });
+    // We only initiate the socket connection once
+    if (!socket) {
+      // In dev, use local URL, in production use relative path (works with Vercel)
+      const socketUrl = process.env.NODE_ENV === 'production' 
+        ? window.location.origin 
+        : 'http://localhost:3000';
+      
+      const socketInstance = io(socketUrl, {
+        path: '/api/socket',
+        autoConnect: false,
+      });
 
-    socketInstance.on('connect', () => {
-      setIsConnected(true);
-    });
+      socketInstance.on('connect', () => {
+        setIsConnected(true);
+        console.log('Socket connected');
+      });
 
-    socketInstance.on('disconnect', () => {
-      setIsConnected(false);
-    });
+      socketInstance.on('disconnect', () => {
+        setIsConnected(false);
+        console.log('Socket disconnected');
+      });
 
-    socketInstance.on('message', (message) => {
-      setMessages(prev => [...prev, message]);
-    });
+      // Handle incoming messages
+      socketInstance.on('message', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
 
-    socketInstance.on('roomUsers', (users) => {
-      setRoomUsers(users);
-    });
+      // Handle previous messages when joining a room
+      socketInstance.on('previousMessages', (previousMessages) => {
+        setMessages(previousMessages);
+      });
 
-    setSocket(socketInstance);
+      // Handle room users updates
+      socketInstance.on('roomUsers', (users) => {
+        setRoomUsers(users);
+      });
 
+      // Handle room ended by creator
+      socketInstance.on('roomEnded', () => {
+        alert('This room has been ended by the host.');
+        window.location.href = '/rooms'; // Force navigate to rooms page
+      });
+
+      setSocket(socketInstance);
+    }
+
+    // Cleanup socket connection on unmount
     return () => {
-      socketInstance.disconnect();
+      if (socket) {
+        socket.disconnect();
+      }
     };
   }, []);
 
+  // Join/leave room when user or room changes
   useEffect(() => {
-    if (socket && user && room) {
-      // For demo, we simulate connection
-      setIsConnected(true);
-      
-      // In a real app, you'd connect and join the room
-      /*
-      socket.connect();
-      socket.emit('joinRoom', { user, roomId: room });
-      */
+    if (socket && user) {
+      if (room) {
+        // Join room
+        socket.connect();
+        socket.emit('joinRoom', { user, roomId: room });
+      } else if (isConnected) {
+        // Leave room and disconnect when navigating away
+        socket.emit('leaveRoom', { roomId: room });
+        socket.disconnect();
+      }
     }
   }, [socket, user, room]);
 
@@ -64,11 +93,7 @@ export const SocketProvider = ({ children }) => {
         timestamp: new Date().toISOString(),
       };
       
-      // In a real app with a server:
-      // socket.emit('message', messageData);
-      
-      // For demo, we'll just update the state directly
-      setMessages(prev => [...prev, messageData]);
+      socket.emit('message', messageData);
     }
   };
 
@@ -81,15 +106,13 @@ export const SocketProvider = ({ children }) => {
         timestamp: new Date().toISOString(),
       };
       
-      // In a real app:
-      // socket.emit('shareDocument', documentData);
-      
-      // For demo:
-      setMessages(prev => [...prev, {
-        ...documentData,
-        type: 'document',
-        text: `Shared document: ${document.name}`,
-      }]);
+      socket.emit('shareDocument', documentData);
+    }
+  };
+
+  const endRoom = () => {
+    if (socket && isConnected && room) {
+      socket.emit('endRoom', { roomId: room });
     }
   };
 
@@ -99,7 +122,8 @@ export const SocketProvider = ({ children }) => {
       messages, 
       roomUsers, 
       sendMessage,
-      shareDocument
+      shareDocument,
+      endRoom
     }}>
       {children}
     </SocketContext.Provider>

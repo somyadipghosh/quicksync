@@ -9,7 +9,7 @@ import CopyButton from '../components/ui/CopyButton';
 const Room = () => {
   const { roomId } = useParams();
   const { user, room, isRoomCreator, leaveRoom } = useUserContext();
-  const { messages, roomUsers, sendMessage, shareDocument, isConnected } = useSocketContext();
+  const { messages, roomUsers, sendMessage, shareDocument, isConnected, endRoom } = useSocketContext();
   const [messageInput, setMessageInput] = useState('');
   const [showUserList, setShowUserList] = useState(false);
   const messagesEndRef = useRef(null);
@@ -56,7 +56,7 @@ const Room = () => {
 
   const handleEndRoom = () => {
     if (window.confirm('Are you sure you want to end this room for all participants?')) {
-      // In a real app, you'd emit a socket event to notify all users
+      endRoom();
       leaveRoom();
       navigate('/rooms');
     }
