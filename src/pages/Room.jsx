@@ -9,7 +9,7 @@ import CopyButton from '../components/ui/CopyButton';
 const Room = () => {
   const { roomId } = useParams();
   const { user, room, isRoomCreator, leaveRoom } = useUserContext();
-  const { messages, roomUsers, sendMessage, shareDocument, isConnected, endRoom } = useSocketContext();
+  const { messages, roomUsers, sendMessage, shareDocument, isConnected, connectionError, endRoom } = useSocketContext();
   const [messageInput, setMessageInput] = useState('');
   const [showUserList, setShowUserList] = useState(false);
   const messagesEndRef = useRef(null);
@@ -77,9 +77,17 @@ const Room = () => {
           <div className="flex justify-between items-center mb-4">
             <div>
               <h2 className="text-xl font-bold">Room: {roomId}</h2>
-              <p className="text-sm text-gray-500">
-                {isConnected ? 'Connected' : 'Connecting...'}
-              </p>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <p className="text-sm text-gray-500">
+                  {isConnected ? 'Connected' : 'Connecting...'}
+                </p>
+              </div>
+              {connectionError && (
+                <p className="text-xs text-red-500 mt-1">
+                  Error: {connectionError}. Make sure the socket server is running.
+                </p>
+              )}
             </div>
             <div className="flex gap-2">
               <Button 

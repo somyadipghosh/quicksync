@@ -9,10 +9,15 @@ export default function SocketHandler(req, res) {
   if (!res.socket.server.io) {
     console.log('Socket is initializing...');
     
-    // Initialize socket server
+    // Initialize socket server with CORS allowed for local development
     const io = new Server(res.socket.server, {
       path: '/api/socket',
       addTrailingSlash: false,
+      cors: {
+        origin: ["http://localhost:5173", "http://127.0.0.1:5173"], // Vite's default port
+        methods: ["GET", "POST"],
+        credentials: true
+      }
     });
 
     // Socket.io server events
@@ -21,10 +26,12 @@ export default function SocketHandler(req, res) {
       
       // Handle joining room
       socket.on('joinRoom', ({ user, roomId }) => {
+        console.log(`${user.name} (${socket.id}) is joining room ${roomId}`);
         socket.join(roomId);
         
         // Initialize room if it doesn't exist
         if (!rooms.has(roomId)) {
+          console.log(`Creating new room: ${roomId}`);
           rooms.set(roomId, {
             users: new Map(),
             messages: [],
@@ -33,19 +40,24 @@ export default function SocketHandler(req, res) {
         
         // Add user to room
         const room = rooms.get(roomId);
-        room.users.set(socket.id, user);
+        const userData = {
+          ...user, 
+          isCreator: room.users.size === 0 // First user is the creator
+        };
+        room.users.set(socket.id, userData);
         
         // Notify everyone about the new user
-        io.to(roomId).emit('roomUsers', Array.from(room.users.values()));
+        const usersArray = Array.from(room.users.values());
+        console.log(`Room ${roomId} now has ${usersArray.length} users`);
+        io.to(roomId).emit('roomUsers', usersArray);
         
         // Send previous messages to the user
         socket.emit('previousMessages', room.messages);
-        
-        console.log(`${user.name} joined room: ${roomId}`);
       });
       
       // Handle leaving room
       socket.on('leaveRoom', ({ roomId }) => {
+        console.log(`User ${socket.id} is leaving room ${roomId}`);
         handleUserLeaving(socket, roomId);
       });
       
@@ -53,6 +65,8 @@ export default function SocketHandler(req, res) {
       socket.on('message', (message) => {
         const roomId = Array.from(socket.rooms)[1]; // First room is user's socket ID
         if (roomId && rooms.has(roomId)) {
+          console.log(`Message in room ${roomId} from ${message.user}: ${message.text.substring(0, 30)}...`);
+          
           // Store message
           const room = rooms.get(roomId);
           room.messages.push(message);
@@ -71,6 +85,8 @@ export default function SocketHandler(req, res) {
       socket.on('shareDocument', (documentData) => {
         const roomId = Array.from(socket.rooms)[1];
         if (roomId && rooms.has(roomId)) {
+          console.log(`Document shared in room ${roomId} from ${documentData.user}: ${documentData.document.name}`);
+          
           // Create a message for this document share
           const docMessage = {
             ...documentData,
@@ -87,6 +103,7 @@ export default function SocketHandler(req, res) {
       // Handle end room (only by creator)
       socket.on('endRoom', ({ roomId }) => {
         if (roomId && rooms.has(roomId)) {
+          console.log(`Room ${roomId} ended by a user`);
           io.to(roomId).emit('roomEnded');
           rooms.delete(roomId);
         }
@@ -97,12 +114,11 @@ export default function SocketHandler(req, res) {
         // Find which room this user was in
         for (const [roomId, room] of rooms.entries()) {
           if (room.users.has(socket.id)) {
+            console.log(`User ${socket.id} disconnected from room ${roomId}`);
             handleUserLeaving(socket, roomId);
             break;
           }
         }
-        
-        console.log(`User disconnected: ${socket.id}`);
       });
     });
     
@@ -122,14 +138,15 @@ export default function SocketHandler(req, res) {
         socket.leave(roomId);
         
         // Notify others
-        io.to(roomId).emit('roomUsers', Array.from(room.users.values()));
+        const remainingUsers = Array.from(room.users.values());
+        io.to(roomId).emit('roomUsers', remainingUsers);
+        console.log(`User left room ${roomId}, ${remainingUsers.length} users remain`);
         
         // Clean up empty rooms
         if (room.users.size === 0) {
+          console.log(`Room ${roomId} is now empty, deleting`);
           rooms.delete(roomId);
         }
-        
-        console.log(`${user.name} left room: ${roomId}`);
       }
     }
   }
