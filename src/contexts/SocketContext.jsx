@@ -15,22 +15,22 @@ export const SocketProvider = ({ children }) => {
   const { user, room } = useUserContext();
   const reconnectAttempts = useRef(0);
   const pingIntervalRef = useRef(null);
-  const lastPingTime = useRef(Date.now());
 
   // Initialize socket connection
   useEffect(() => {
-    // We only initiate the socket connection once
     if (!socket) {
-      console.log('Creating new Socket.IO connection');
+      console.log('Initializing new socket connection...');
       
-      // Create a simple socket connection without URL (uses current origin)
+      // The key change: correctly configure socket.io for API routes
       const socketInstance = io({
-        path: '/api/socket-handler',
+        // Don't set a path here, we'll use the URL instead
         transports: ['polling', 'websocket'],
-        forceNew: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
         timeout: 20000,
-        autoConnect: true
+        autoConnect: true,
+        // Important: Add the API route as the path in the manager URL
+        path: '/api/socket-handler'
       });
       
       socketInstance.on('connect', () => {
@@ -58,7 +58,7 @@ export const SocketProvider = ({ children }) => {
 
       // Handle previous messages when joining a room
       socketInstance.on('previousMessages', (previousMessages) => {
-        console.log('Received previous messages:', previousMessages?.length);
+        console.log('Received previous messages:', previousMessages?.length || 0);
         setMessages(previousMessages || []);
       });
 
@@ -79,16 +79,22 @@ export const SocketProvider = ({ children }) => {
       // Send heartbeat every 30 seconds to keep connection alive
       pingIntervalRef.current = setInterval(() => {
         if (socketInstance.connected) {
+          console.log('Sending heartbeat ping');
           socketInstance.emit('heartbeat');
+        } else if (reconnectAttempts.current < 5) {
+          console.log('Socket not connected, reconnecting...');
+          socketInstance.connect();
         }
       }, 30000);
       
-      // Clean up on unmount
       return () => {
         if (pingIntervalRef.current) {
           clearInterval(pingIntervalRef.current);
         }
-        socketInstance.disconnect();
+        if (socketInstance) {
+          console.log('Cleaning up socket connection');
+          socketInstance.disconnect();
+        }
       };
     }
   }, []);
@@ -116,6 +122,7 @@ export const SocketProvider = ({ children }) => {
     }
   }, [socket, user, room]);
 
+  // Message sending function
   const sendMessage = (text) => {
     if (socket && isConnected && user && room) {
       const messageData = {
@@ -129,6 +136,7 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  // Document sharing function
   const shareDocument = (document) => {
     if (socket && isConnected && user && room) {
       const documentData = {
@@ -142,6 +150,7 @@ export const SocketProvider = ({ children }) => {
     }
   };
 
+  // Room ending function
   const endRoom = () => {
     if (socket && isConnected && room) {
       socket.emit('endRoom', { roomId: room });

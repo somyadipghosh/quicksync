@@ -5,25 +5,21 @@ const rooms = new Map();
 // Track active connections
 const activeConnections = new Map();
 
+// Handler function for socket.io in Vercel
 export default async function handler(req, res) {
-  // Add CORS headers
+  // Required CORS headers for Socket.IO handshake
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  // Only proceed for GET and POST requests
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    res.status(405).end();
-    return;
-  }
-
-  // If Socket.IO is already initialized, just return
+  // Check if Socket.IO server is already initialized
   if (res.socket.server.io) {
     console.log('Socket.IO already running');
     res.end();
@@ -33,25 +29,23 @@ export default async function handler(req, res) {
   try {
     console.log('Setting up Socket.IO server in socket-handler.js');
     
-    // Initialize Socket.IO with the server
+    // Create new Socket.IO server
     const io = new Server(res.socket.server, {
-      path: '/api/socket-handler', // Match the client path exactly
+      path: '', // Important: Use empty string since path is part of the API route
       addTrailingSlash: false,
       cors: {
         origin: '*',
-        methods: ['GET', 'POST', 'OPTIONS'],
+        methods: ['GET', 'POST'],
         credentials: true
       },
-      // Configure for better serverless performance
+      // Serverless optimized settings
       transports: ['polling', 'websocket'],
-      pingTimeout: 60000,
-      pingInterval: 20000,
-      upgradeTimeout: 30000,
-      connectTimeout: 45000,
-      allowEIO3: true,
+      pingTimeout: 30000,
+      pingInterval: 25000,
+      connectTimeout: 30000,
     });
 
-    // Handle new connections
+    // Handle socket connections
     io.on('connection', (socket) => {
       console.log(`User connected: ${socket.id}`);
       activeConnections.set(socket.id, { 
@@ -68,9 +62,8 @@ export default async function handler(req, res) {
       };
       
       // Update activity on each incoming event
-      socket.use(([event, ...args], next) => {
+      socket.onAny(() => {
         refreshActivity();
-        next();
       });
       
       // Handle heartbeat to keep connection alive
@@ -230,12 +223,12 @@ export default async function handler(req, res) {
 
     // Save the io instance
     res.socket.server.io = io;
-    console.log('Socket.IO initialized in socket-handler.js');
+    console.log('Socket.IO initialized successfully');
   } catch (error) {
     console.error('Failed to initialize Socket.IO:', error);
-    res.status(500).end();
+    res.status(500).json({ error: 'Failed to initialize Socket.IO' });
     return;
   }
   
-  res.end();
+  res.status(200).json({ success: true });
 }
