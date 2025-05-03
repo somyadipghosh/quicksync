@@ -19,81 +19,68 @@ export const SocketProvider = ({ children }) => {
   // Initialize socket connection
   useEffect(() => {
     if (!socket) {
-      console.log('Initializing new socket connection...');
+      console.log('Creating new socket connection...');
       
-      // The key change: correctly configure socket.io for API routes
-      const socketInstance = io({
-        // Don't set a path here, we'll use the URL instead
-        transports: ['polling', 'websocket'],
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        timeout: 20000,
-        autoConnect: true,
-        // Important: Add the API route as the path in the manager URL
-        path: '/api/socket-handler'
-      });
-      
-      socketInstance.on('connect', () => {
-        console.log('Socket connected with ID:', socketInstance.id);
-        setIsConnected(true);
-        setConnectionError(null);
-        reconnectAttempts.current = 0;
-      });
+      try {
+        // Use a simple configuration that works in both development and production
+        const socketInstance = io(window.location.origin, {
+          path: '/api/socket-handler',
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          timeout: 20000
+        });
+        
+        socketInstance.on('connect', () => {
+          console.log('Socket connected with ID:', socketInstance.id);
+          setIsConnected(true);
+          setConnectionError(null);
+          reconnectAttempts.current = 0;
+        });
 
-      socketInstance.on('connect_error', (err) => {
-        console.error('Socket connection error:', err.message);
-        setConnectionError(`Connection error: ${err.message}`);
-        reconnectAttempts.current += 1;
-      });
+        socketInstance.on('connect_error', (err) => {
+          console.error('Socket connection error:', err.message);
+          setConnectionError(`Connection error: ${err.message}`);
+          reconnectAttempts.current += 1;
+        });
 
-      socketInstance.on('disconnect', (reason) => {
-        console.log('Socket disconnected:', reason);
-        setIsConnected(false);
-      });
+        socketInstance.on('disconnect', (reason) => {
+          console.log('Socket disconnected:', reason);
+          setIsConnected(false);
+        });
 
-      // Handle incoming messages
-      socketInstance.on('message', (message) => {
-        setMessages(prev => [...prev, message]);
-      });
+        // Handle incoming messages
+        socketInstance.on('message', (message) => {
+          setMessages(prev => [...prev, message]);
+        });
 
-      // Handle previous messages when joining a room
-      socketInstance.on('previousMessages', (previousMessages) => {
-        console.log('Received previous messages:', previousMessages?.length || 0);
-        setMessages(previousMessages || []);
-      });
+        // Handle previous messages when joining a room
+        socketInstance.on('previousMessages', (previousMessages) => {
+          console.log('Received previous messages:', previousMessages?.length || 0);
+          setMessages(previousMessages || []);
+        });
 
-      // Handle room users updates
-      socketInstance.on('roomUsers', (users) => {
-        console.log('Room users updated:', users?.length || 0);
-        setRoomUsers(users || []);
-      });
+        // Handle room users updates
+        socketInstance.on('roomUsers', (users) => {
+          console.log('Room users updated:', users?.length || 0);
+          setRoomUsers(users || []);
+        });
 
-      // Handle room ended by creator
-      socketInstance.on('roomEnded', () => {
-        alert('This room has been ended by the host.');
-        window.location.href = '/rooms';
-      });
+        // Handle room ended by creator
+        socketInstance.on('roomEnded', () => {
+          alert('This room has been ended by the host.');
+          window.location.href = '/rooms';
+        });
 
-      setSocket(socketInstance);
-      
-      // Send heartbeat every 30 seconds to keep connection alive
-      pingIntervalRef.current = setInterval(() => {
-        if (socketInstance.connected) {
-          console.log('Sending heartbeat ping');
-          socketInstance.emit('heartbeat');
-        } else if (reconnectAttempts.current < 5) {
-          console.log('Socket not connected, reconnecting...');
-          socketInstance.connect();
-        }
-      }, 30000);
+        setSocket(socketInstance);
+      } catch (error) {
+        console.error('Error initializing socket:', error);
+        setConnectionError(`Initialization error: ${error.message}`);
+      }
       
       return () => {
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-        }
-        if (socketInstance) {
+        if (socket) {
           console.log('Cleaning up socket connection');
-          socketInstance.disconnect();
+          socket.disconnect();
         }
       };
     }
@@ -103,11 +90,6 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     if (socket && user && room) {
       console.log(`Joining room ${room} as ${user.name}`);
-      
-      // Ensure we're connected before joining
-      if (!socket.connected) {
-        socket.connect();
-      }
       
       // Join the room
       socket.emit('joinRoom', { user, roomId: room });
