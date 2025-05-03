@@ -25,7 +25,7 @@ export const SocketProvider = ({ children }) => {
 
       // Socket path differs between development and production (Vercel)
       const socketPath = process.env.NODE_ENV === 'production'
-        ? '/api/socketio'  // Use the socketio handler for Vercel
+        ? '/api/io'  // Use our new io handler for Vercel
         : '/api/socket';   // Use the socket handler for local development
       
       console.log(`Connecting to Socket.IO server at ${socketUrl} with path ${socketPath}`);
@@ -39,9 +39,10 @@ export const SocketProvider = ({ children }) => {
           ? ['polling', 'websocket'] 
           : ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 5,
+        reconnectionAttempts: 10,
         reconnectionDelay: 1000,
-        timeout: 20000
+        timeout: 30000, // Increase timeout for slow connections
+        forceNew: true  // Force a new connection
       });
 
       // Debug connection issues
@@ -54,6 +55,13 @@ export const SocketProvider = ({ children }) => {
       socketInstance.on('connect_error', (err) => {
         console.error('Socket connection error:', err.message);
         setConnectionError(`${err.message}`);
+        
+        // Try to reconnect with polling only if WebSocket failed
+        if (err.message.includes('websocket')) {
+          console.log('Reconnecting with polling transport only...');
+          socketInstance.io.opts.transports = ['polling'];
+          socketInstance.connect();
+        }
       });
 
       socketInstance.on('disconnect', (reason) => {
@@ -91,15 +99,25 @@ export const SocketProvider = ({ children }) => {
       });
 
       setSocket(socketInstance);
+      
+      // Set up a ping interval to keep the connection alive in Vercel
+      const pingInterval = setInterval(() => {
+        if (process.env.NODE_ENV === 'production' && socketInstance.connected) {
+          console.log('Sending ping to keep connection alive');
+          fetch(`${window.location.origin}/api/ping`)
+            .then(res => res.json())
+            .catch(err => console.error('Ping error:', err));
+        }
+      }, 45000); // Every 45 seconds
+      
+      return () => {
+        clearInterval(pingInterval);
+        if (socketInstance) {
+          console.log('Cleaning up socket connection');
+          socketInstance.disconnect();
+        }
+      };
     }
-
-    // Cleanup socket connection on unmount
-    return () => {
-      if (socket) {
-        console.log('Cleaning up socket connection');
-        socket.disconnect();
-      }
-    };
   }, []);
 
   // Join/leave room when user or room changes
