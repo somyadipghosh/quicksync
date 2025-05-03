@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { useUserContext } from './UserContext';
 
@@ -13,6 +13,9 @@ export const SocketProvider = ({ children }) => {
   const [messages, setMessages] = useState([]);
   const [roomUsers, setRoomUsers] = useState([]);
   const { user, room } = useUserContext();
+  const reconnectAttempts = useRef(0);
+  const pingIntervalRef = useRef(null);
+  const lastPingTime = useRef(Date.now());
 
   // Initialize socket connection
   useEffect(() => {
@@ -25,24 +28,28 @@ export const SocketProvider = ({ children }) => {
 
       // Socket path differs between development and production (Vercel)
       const socketPath = process.env.NODE_ENV === 'production'
-        ? '/api/io'  // Use our new io handler for Vercel
+        ? '/api/io'  // Use our io handler for Vercel
         : '/api/socket';   // Use the socket handler for local development
       
       console.log(`Connecting to Socket.IO server at ${socketUrl} with path ${socketPath}`);
       
-      // Create socket instance but don't connect yet
+      // Create socket instance with improved settings for stability
       const socketInstance = io(socketUrl, {
         path: socketPath,
         autoConnect: false,
-        // Try polling first in production, which works better in Vercel's serverless environment
+        // Always use polling first in production for greater stability
         transports: process.env.NODE_ENV === 'production' 
-          ? ['polling', 'websocket'] 
+          ? ['polling'] 
           : ['websocket', 'polling'],
         reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        timeout: 30000, // Increase timeout for slow connections
-        forceNew: true  // Force a new connection
+        reconnectionAttempts: 20,  // Increased attempts
+        reconnectionDelay: 2000,   // Longer delay between attempts
+        reconnectionDelayMax: 10000, // Max delay is 10 seconds
+        timeout: 60000,            // Full minute timeout
+        forceNew: true,
+        // Much more aggressive ping settings to maintain connection
+        pingInterval: 15000,       // Check connection every 15 seconds
+        pingTimeout: 10000         // Wait 10 seconds for response
       });
 
       // Debug connection issues
@@ -50,33 +57,47 @@ export const SocketProvider = ({ children }) => {
         console.log('Socket connected successfully with ID:', socketInstance.id);
         setIsConnected(true);
         setConnectionError(null);
+        reconnectAttempts.current = 0;
+        lastPingTime.current = Date.now();
       });
 
       socketInstance.on('connect_error', (err) => {
-        console.error('Socket connection error:', err.message);
+        console.error('Socket connection error:', err.message, 'Attempt:', reconnectAttempts.current);
         setConnectionError(`${err.message}`);
+        reconnectAttempts.current += 1;
         
-        // Try to reconnect with polling only if WebSocket failed
-        if (err.message.includes('websocket')) {
-          console.log('Reconnecting with polling transport only...');
+        // Always use polling if we have multiple failures
+        if (reconnectAttempts.current > 3) {
+          console.log('Multiple reconnection failures, switching to polling only...');
           socketInstance.io.opts.transports = ['polling'];
-          socketInstance.connect();
         }
+      });
+
+      // Handle pong responses to track connection health
+      socketInstance.io.engine.on('pong', () => {
+        lastPingTime.current = Date.now();
       });
 
       socketInstance.on('disconnect', (reason) => {
         console.log('Socket disconnected:', reason);
         setIsConnected(false);
         
-        // Set error if it was an error disconnect
-        if (reason === 'io server disconnect' || reason === 'io client disconnect') {
-          setConnectionError(`Disconnected: ${reason}`);
+        if (reason === 'io server disconnect') {
+          // Server disconnected us, try to reconnect manually
+          console.log('Server disconnected us, attempting to reconnect...');
+          setTimeout(() => socketInstance.connect(), 3000);
+        }
+        
+        if (reason === 'ping timeout' || reason === 'transport close' || reason === 'transport error') {
+          // Connection issues, try to reconnect with polling only
+          console.log('Connection timeout/transport issue, switching to polling...');
+          socketInstance.io.opts.transports = ['polling'];
+          setTimeout(() => socketInstance.connect(), 2000);
         }
       });
 
       // Handle incoming messages
       socketInstance.on('message', (message) => {
-        console.log('Received message:', message);
         setMessages(prev => [...prev, message]);
       });
 
@@ -88,30 +109,42 @@ export const SocketProvider = ({ children }) => {
 
       // Handle room users updates
       socketInstance.on('roomUsers', (users) => {
-        console.log('Room users updated:', users);
+        console.log('Room users updated:', users?.length || 0);
         setRoomUsers(users || []);
       });
 
       // Handle room ended by creator
       socketInstance.on('roomEnded', () => {
         alert('This room has been ended by the host.');
-        window.location.href = '/rooms'; // Force navigate to rooms page
+        window.location.href = '/rooms';
       });
 
       setSocket(socketInstance);
       
-      // Set up a ping interval to keep the connection alive in Vercel
-      const pingInterval = setInterval(() => {
-        if (process.env.NODE_ENV === 'production' && socketInstance.connected) {
+      // Set up a more aggressive ping interval to keep connection alive
+      pingIntervalRef.current = setInterval(() => {
+        if (socketInstance && socketInstance.connected) {
           console.log('Sending ping to keep connection alive');
+          
+          // Ping the server via our own endpoint (always works even when socket is struggling)
           fetch(`${window.location.origin}/api/ping`)
             .then(res => res.json())
-            .catch(err => console.error('Ping error:', err));
+            .catch(() => {}); // Ignore errors
+            
+          // Check if the connection seems stale (no pong in 30 seconds)
+          const timeSinceLastPong = Date.now() - lastPingTime.current;
+          if (timeSinceLastPong > 30000 && isConnected) {
+            console.log('Connection may be stale, attempting reconnection...');
+            socketInstance.disconnect().connect(); // Force reconnection cycle
+          }
         }
-      }, 45000); // Every 45 seconds
+      }, 15000); // Every 15 seconds
       
       return () => {
-        clearInterval(pingInterval);
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+        }
+        
         if (socketInstance) {
           console.log('Cleaning up socket connection');
           socketInstance.disconnect();
@@ -123,40 +156,40 @@ export const SocketProvider = ({ children }) => {
   // Join/leave room when user or room changes
   useEffect(() => {
     if (socket && user && room) {
-      console.log(`Attempting to join room ${room} as ${user.name} (${user.id})`);
+      console.log(`Attempting to join room ${room} as ${user.name}`);
       
-      // Connect socket if not connected
-      if (!socket.connected) {
-        socket.connect();
-      }
-      
-      // Function to join room
-      const joinTheRoom = () => {
-        socket.emit('joinRoom', { user, roomId: room });
-        console.log('Emitted joinRoom event');
+      // Ensure connection and join room with retries
+      const joinWithRetry = (retries = 0) => {
+        if (socket.connected) {
+          socket.emit('joinRoom', { user, roomId: room });
+          console.log('Emitted joinRoom event');
+        } else if (retries < 5) {
+          console.log(`Socket not connected, retrying join... (${retries + 1}/5)`);
+          socket.connect();
+          setTimeout(() => joinWithRetry(retries + 1), 2000);
+        }
       };
       
-      // If already connected, join immediately
-      if (socket.connected) {
-        joinTheRoom();
-      } else {
-        // Otherwise wait for connection
-        const onConnectHandler = () => {
-          joinTheRoom();
-          // Remove this handler after it runs once
-          socket.off('connect', onConnectHandler);
-        };
-        socket.on('connect', onConnectHandler);
-      }
+      joinWithRetry();
+      
+      // Set up reconnect handler
+      const handleReconnect = () => {
+        console.log('Reconnected, rejoining room...');
+        socket.emit('joinRoom', { user, roomId: room });
+      };
+      
+      socket.on('reconnect', handleReconnect);
+      
+      // Cleanup when leaving room
+      return () => {
+        socket.off('reconnect', handleReconnect);
+        
+        if (socket.connected && room) {
+          console.log(`Leaving room ${room}`);
+          socket.emit('leaveRoom', { roomId: room });
+        }
+      };
     }
-    
-    // Cleanup when leaving room
-    return () => {
-      if (socket && socket.connected && room) {
-        console.log(`Leaving room ${room}`);
-        socket.emit('leaveRoom', { roomId: room });
-      }
-    };
   }, [socket, user, room]);
 
   const sendMessage = (text) => {
