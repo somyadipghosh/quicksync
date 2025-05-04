@@ -1,59 +1,56 @@
 import { Server } from "socket.io";
 
-// In-memory data store
+// In-memory data store (Note: this will be reset on server restarts with serverless)
 const rooms = new Map();
 
-// Properly configured Socket.IO handler for Vercel
-export default function SocketHandler(req, res) {
-  // Set appropriate headers for CORS and WebSocket support
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-
+export default function handler(req, res) {
+  // Handle preflight requests for CORS
   if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.status(200).end();
     return;
   }
-
-  // Check if Socket.IO is already initialized
-  if (res.socket.server.io) {
-    console.log("Socket.IO already running");
-    res.status(200).end();
-    return;
-  }
-
-  console.log("Initializing Socket.IO server on Vercel");
   
-  // Socket.IO server configuration optimized for Vercel
+  // Socket.io server already initialized
+  if (res.socket.server.io) {
+    console.log("Socket.IO instance already running");
+    res.end();
+    return;
+  }
+  
+  console.log("Initializing Socket.IO server on Vercel with WebSockets");
+  
+  // Create a Socket.IO server instance
   const io = new Server(res.socket.server, {
-    path: "/api/socket.io", // Important: use '/api/socket.io' for proper routing on Vercel
+    path: "/api/socket.io",
     addTrailingSlash: false,
     cors: {
       origin: "*",
       methods: ["GET", "POST", "OPTIONS"],
-      credentials: true,
-      allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"]
+      credentials: true
     },
-    // Use WebSockets with polling fallback for Vercel
+    // Use WebSocket transport with polling as fallback
     transports: ['websocket', 'polling'],
+    // Don't destroy long-polling session after upgrade to WebSocket
+    allowUpgrades: true,
+    // Prevent proxy issues (important for Vercel)
     pingTimeout: 30000,
     pingInterval: 20000,
     upgradeTimeout: 10000,
-    maxHttpBufferSize: 1e7, // 10MB
-    allowRequest: (req, callback) => {
-      // Additional security check if needed
-      callback(null, true);
-    }
+    maxHttpBufferSize: 1e7, // 10MB for file sharing
   });
 
-  // Keep track of connections
+  // Track connection count
   let connectionCount = 0;
 
-  // Socket.IO connection handler
+  // Connection handler
   io.on("connection", (socket) => {
     connectionCount++;
-    console.log(`Client connected: ${socket.id} (Total: ${connectionCount}) (Transport: ${socket.conn.transport.name})`);
+    const transport = socket.conn.transport.name; // websocket or polling
+    console.log(`Client connected: ${socket.id} (Total: ${connectionCount}) (Transport: ${transport})`);
     
     // Handle joining room
     socket.on("joinRoom", ({ user, roomId }) => {
@@ -142,6 +139,11 @@ export default function SocketHandler(req, res) {
       }
     });
     
+    // Client custom ping to keep connection alive
+    socket.on("ping", () => {
+      socket.emit("pong");
+    });
+    
     // Handle disconnection
     socket.on("disconnect", (reason) => {
       connectionCount--;
@@ -162,16 +164,8 @@ export default function SocketHandler(req, res) {
         }
       }
     });
-    
-    // Handle errors
-    socket.on("error", (error) => {
-      console.error(`Socket error for ${socket.id}:`, error);
-    });
   });
 
-  // Store the Socket.IO instance on the server
   res.socket.server.io = io;
-  
-  // Mark request as handled
   res.status(200).end();
 }
