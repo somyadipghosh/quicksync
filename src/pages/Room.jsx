@@ -83,6 +83,12 @@ const Room = () => {
     navigate('/rooms');
   };
 
+  // Force a manual reconnect by refreshing the page
+  const handleManualReconnect = () => {
+    setReconnecting(true);
+    window.location.reload();
+  };
+
   if (!user || !room) return null;
 
   return (
@@ -98,6 +104,14 @@ const Room = () => {
                 <p className="text-sm text-gray-500">
                   {isConnected ? 'Connected' : reconnecting ? 'Reconnecting...' : 'Disconnected'}
                 </p>
+                {!isConnected && !reconnecting && (
+                  <button 
+                    onClick={handleManualReconnect} 
+                    className="ml-2 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Reconnect
+                  </button>
+                )}
               </div>
               {connectionError && (
                 <p className="text-xs text-red-500 mt-1">
@@ -134,23 +148,34 @@ const Room = () => {
           </div>
         </div>
 
-        {/* Connection error banner */}
+        {/* Connection error banner with manual reconnect option */}
         {connectionError && (
           <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                </svg>
+            <div className="flex items-center justify-between">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-yellow-700">
+                    {reconnecting 
+                      ? 'Connection lost. Attempting to reconnect...' 
+                      : 'Having trouble connecting to the room. This might be due to network issues or server limitations in the free tier.'
+                    }
+                  </p>
+                </div>
               </div>
-              <div className="ml-3">
-                <p className="text-sm text-yellow-700">
-                  {reconnecting 
-                    ? 'Connection lost. Attempting to reconnect...' 
-                    : 'Having trouble connecting to the room. This might be due to network issues or server limitations in the free tier.'
-                  }
-                </p>
-              </div>
+              {!reconnecting && (
+                <Button
+                  variant="secondary"
+                  onClick={handleManualReconnect}
+                  className="text-xs ml-4"
+                >
+                  Try Reconnecting
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -249,6 +274,7 @@ const Room = () => {
                   onChange={(e) => setMessageInput(e.target.value)}
                   className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Type a message..."
+                  disabled={!isConnected}
                 />
                 
                 <div className="relative">
@@ -256,6 +282,7 @@ const Room = () => {
                     type="button" 
                     variant="secondary"
                     onClick={() => document.getElementById('file-upload').click()}
+                    disabled={!isConnected}
                   >
                     Attach
                   </Button>
@@ -264,16 +291,22 @@ const Room = () => {
                     type="file"
                     onChange={handleFileUpload}
                     className="hidden"
+                    disabled={!isConnected}
                   />
                 </div>
                 
                 <Button 
                   type="submit" 
-                  disabled={!messageInput.trim()}
+                  disabled={!messageInput.trim() || !isConnected}
                 >
                   Send
                 </Button>
               </form>
+              {!isConnected && (
+                <p className="text-xs text-red-500 mt-2">
+                  You are currently disconnected. Messages cannot be sent until connection is restored.
+                </p>
+              )}
             </div>
           </div>
         </div>

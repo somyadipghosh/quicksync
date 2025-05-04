@@ -15,107 +15,206 @@ export const SocketProvider = ({ children }) => {
   const { user, room } = useUserContext();
   const reconnectAttempts = useRef(0);
   const reconnectTimerRef = useRef(null);
+  const socketRef = useRef(null);
 
   // Initialize socket connection
   useEffect(() => {
-    // Only create socket if it doesn't exist
-    if (!socket) {
-      console.log('Creating new Socket.IO connection');
+    if (socketRef.current) {
+      return; // Socket already exists
+    }
+    
+    console.log('Creating new Socket.IO connection');
+    
+    try {
+      // Create socket with configuration matching server settings
+      const socketInstance = io({
+        path: "/socket.io/",
+        transports: ['polling'],
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+        timeout: 20000,
+        autoConnect: false, // We'll connect manually
+      });
       
-      try {
-        // Create socket with simplified polling-only config
-        const socketInstance = io({
-          // Use polling only to match server config and avoid websocket errors
-          transports: ['polling'],
-          reconnection: true,
-          reconnectionAttempts: 10,
-          reconnectionDelay: 1000,
-          timeout: 20000
-        });
+      socketRef.current = socketInstance;
+      setSocket(socketInstance);
+      
+      socketInstance.on('connect', () => {
+        console.log('Socket connected successfully:', socketInstance.id);
+        setIsConnected(true);
+        setConnectionError(null);
+        reconnectAttempts.current = 0;
         
-        socketInstance.on('connect', () => {
-          console.log('Socket connected successfully:', socketInstance.id);
-          setIsConnected(true);
-          setConnectionError(null);
-          reconnectAttempts.current = 0;
-          
-          // If we had a room and were previously disconnected, rejoin it
-          if (user && room) {
-            console.log(`Reconnected, rejoining room ${room}`);
-            socketInstance.emit('joinRoom', { user, roomId: room });
-          }
-        });
+        // If we had a room and were previously disconnected, rejoin it
+        if (user && room) {
+          console.log(`Connected, joining room ${room}`);
+          socketInstance.emit('joinRoom', { user, roomId: room });
+        }
+      });
 
-        socketInstance.on('connect_error', (err) => {
-          console.error('Socket connection error:', err.message);
-          setConnectionError(`Connection error: ${err.message}`);
-          
-          // Increment reconnect attempts
-          reconnectAttempts.current += 1;
-          
-          // After too many failures, try a full reconnection
-          if (reconnectAttempts.current > 5) {
-            console.log('Multiple reconnection failures, trying fresh connection');
-            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
-            
-            reconnectTimerRef.current = setTimeout(() => {
-              socketInstance.disconnect();
-              socketInstance.connect();
-            }, 2000);
-          }
-        });
+      socketInstance.on('connect_error', (err) => {
+        console.error('Socket connection error:', err.message);
+        setConnectionError(`Connection error: ${err.message}`);
+        setIsConnected(false);
+        
+        // Handle reconnection
+        handleReconnect();
+      });
 
-        socketInstance.on('disconnect', (reason) => {
-          console.log('Socket disconnected:', reason);
-          setIsConnected(false);
-          
-          // Try to reconnect manually if server closed the connection
-          if (reason === 'io server disconnect') {
-            socketInstance.connect();
-          }
-        });
+      socketInstance.on('disconnect', (reason) => {
+        console.log('Socket disconnected:', reason);
+        setIsConnected(false);
+        
+        if (reason === 'io server disconnect' || reason === 'transport close') {
+          // Server disconnected us, so we need to reconnect manually
+          handleReconnect();
+        }
+      });
 
-        // Handle incoming messages
-        socketInstance.on('message', (message) => {
-          setMessages(prev => [...prev, message]);
-        });
+      // Handle incoming messages
+      socketInstance.on('message', (message) => {
+        setMessages(prev => [...prev, message]);
+      });
 
-        // Handle previous messages when joining a room
-        socketInstance.on('previousMessages', (previousMessages) => {
-          console.log('Received previous messages:', previousMessages?.length || 0);
-          setMessages(previousMessages || []);
-        });
+      // Handle previous messages when joining a room
+      socketInstance.on('previousMessages', (previousMessages) => {
+        console.log('Received previous messages:', previousMessages?.length || 0);
+        setMessages(previousMessages || []);
+      });
 
-        // Handle room users updates
-        socketInstance.on('roomUsers', (users) => {
-          console.log('Room users updated:', users?.length || 0);
-          setRoomUsers(users || []);
-        });
+      // Handle room users updates
+      socketInstance.on('roomUsers', (users) => {
+        console.log('Room users updated:', users?.length || 0);
+        setRoomUsers(users || []);
+      });
 
-        // Handle room ended by creator
-        socketInstance.on('roomEnded', () => {
-          alert('This room has been ended by the host.');
-          window.location.href = '/rooms';
-        });
+      // Handle room ended by creator
+      socketInstance.on('roomEnded', () => {
+        alert('This room has been ended by the host.');
+        window.location.href = '/rooms';
+      });
 
-        setSocket(socketInstance);
-      } catch (error) {
-        console.error('Error initializing socket:', error);
-        setConnectionError(`Failed to initialize socket: ${error.message}`);
-      }
+      // Connect the socket
+      socketInstance.connect();
+      
+    } catch (error) {
+      console.error('Error initializing socket:', error);
+      setConnectionError(`Failed to initialize socket: ${error.message}`);
     }
     
     return () => {
       // Clean up on unmount
-      if (socket) {
+      if (socketRef.current) {
         console.log('Cleaning up socket connection');
-        socket.disconnect();
+        socketRef.current.disconnect();
+        socketRef.current = null;
       }
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
       }
     };
   }, []);
+
+  // Helper function to handle reconnection
+  const handleReconnect = () => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+    }
+    
+    reconnectAttempts.current += 1;
+    
+    if (reconnectAttempts.current <= 5) {
+      console.log(`Attempting reconnection #${reconnectAttempts.current} in 2 seconds...`);
+      
+      reconnectTimerRef.current = setTimeout(() => {
+        if (socketRef.current) {
+          console.log('Reconnecting...');
+          socketRef.current.connect();
+        }
+      }, 2000);
+    } else {
+      console.log('Maximum reconnection attempts reached. Creating a new socket...');
+      
+      // Reset for a fresh connection
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current.removeAllListeners();
+        socketRef.current = null;
+        setSocket(null);
+      }
+      
+      // Reset reconnect counter after a longer delay
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectAttempts.current = 0;
+        
+        // Create a new socket instance
+        const newSocket = io({
+          path: "/socket.io/",
+          transports: ['polling'],
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          timeout: 20000,
+          autoConnect: true,
+        });
+        
+        socketRef.current = newSocket;
+        setSocket(newSocket);
+        
+        // Set up all event listeners again
+        setupSocketListeners(newSocket);
+      }, 5000);
+    }
+  };
+
+  // Helper to set up event listeners for a new socket
+  const setupSocketListeners = (socketInstance) => {
+    socketInstance.on('connect', () => {
+      console.log('Socket connected successfully:', socketInstance.id);
+      setIsConnected(true);
+      setConnectionError(null);
+      reconnectAttempts.current = 0;
+      
+      // If we had a room, join it
+      if (user && room) {
+        socketInstance.emit('joinRoom', { user, roomId: room });
+      }
+    });
+    
+    socketInstance.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      setConnectionError(`Connection error: ${err.message}`);
+      setIsConnected(false);
+      handleReconnect();
+    });
+    
+    socketInstance.on('disconnect', (reason) => {
+      console.log('Socket disconnected:', reason);
+      setIsConnected(false);
+      
+      if (reason === 'io server disconnect' || reason === 'transport close') {
+        handleReconnect();
+      }
+    });
+    
+    socketInstance.on('message', (message) => {
+      setMessages(prev => [...prev, message]);
+    });
+    
+    socketInstance.on('previousMessages', (previousMessages) => {
+      setMessages(previousMessages || []);
+    });
+    
+    socketInstance.on('roomUsers', (users) => {
+      setRoomUsers(users || []);
+    });
+    
+    socketInstance.on('roomEnded', () => {
+      alert('This room has been ended by the host.');
+      window.location.href = '/rooms';
+    });
+  };
 
   // Join/leave room when user or room changes
   useEffect(() => {
@@ -153,10 +252,10 @@ export const SocketProvider = ({ children }) => {
       if (!socket.connected) {
         socket.connect();
         
-        // Give it a moment to connect
-        setTimeout(() => {
+        // Wait for connection and then send
+        socket.once('connect', () => {
           socket.emit('message', messageData);
-        }, 500);
+        });
       } else {
         socket.emit('message', messageData);
       }
@@ -173,7 +272,14 @@ export const SocketProvider = ({ children }) => {
         timestamp: new Date().toISOString(),
       };
       
-      socket.emit('shareDocument', documentData);
+      if (!socket.connected) {
+        socket.connect();
+        socket.once('connect', () => {
+          socket.emit('shareDocument', documentData);
+        });
+      } else {
+        socket.emit('shareDocument', documentData);
+      }
     }
   };
 
