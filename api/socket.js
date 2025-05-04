@@ -5,10 +5,10 @@ const rooms = new Map();
 
 // Simple serverless Socket.IO handler
 export default function SocketHandler(req, res) {
-  // Enable CORS
+  // Enable CORS with specific headers needed for socket.io
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
@@ -25,23 +25,50 @@ export default function SocketHandler(req, res) {
 
   console.log("Initializing Socket.IO server");
   
-  // Simplified Socket.IO server configuration
+  // Improved Socket.IO server configuration
   const io = new Server(res.socket.server, {
     path: "/socket.io/",
     addTrailingSlash: false,
     cors: {
       origin: "*",
-      methods: ["GET", "POST"],
+      methods: ["GET", "POST", "OPTIONS"],
       credentials: true,
-      allowedHeaders: ["*"]
+      allowedHeaders: ["Origin", "X-Requested-With", "Content-Type", "Accept", "Authorization"]
     },
-    // Use polling only to avoid WebSocket issues in serverless
+    // Use polling with increased timeout settings
     transports: ['polling'],
+    pingTimeout: 60000,      // How long to wait for a ping response (ms)
+    pingInterval: 25000,     // How often to ping the client (ms)
+    upgradeTimeout: 30000,   // Time for upgrade to complete (ms)
+    maxHttpBufferSize: 1e8,  // 100 MB - for file sharing
+    connectTimeout: 45000,   // Connection timeout (ms)
+    allowEIO3: true          // Allow Engine.IO 3 compatibility
   });
+
+  // Keep track of connections to help diagnose issues
+  let connectionCount = 0;
 
   // Socket.IO connection handler
   io.on("connection", (socket) => {
-    console.log("Client connected:", socket.id);
+    connectionCount++;
+    console.log(`Client connected: ${socket.id} (Total: ${connectionCount})`);
+    
+    // Add ping/pong monitoring to help diagnose connection issues
+    let lastPingTime = Date.now();
+    
+    socket.on("ping", () => {
+      lastPingTime = Date.now();
+      socket.emit("pong");
+    });
+
+    // Check connection health periodically
+    const healthCheck = setInterval(() => {
+      // Only log if it's been more than 30s since last ping
+      const timeSinceLastPing = Date.now() - lastPingTime;
+      if (timeSinceLastPing > 30000) {
+        console.log(`Connection health check for ${socket.id}: ${timeSinceLastPing}ms since last ping`);
+      }
+    }, 30000);
 
     // Handle joining room
     socket.on("joinRoom", ({ user, roomId }) => {
@@ -131,8 +158,12 @@ export default function SocketHandler(req, res) {
     });
     
     // Handle disconnection
-    socket.on("disconnect", () => {
-      console.log("Client disconnected:", socket.id);
+    socket.on("disconnect", (reason) => {
+      connectionCount--;
+      console.log(`Client disconnected: ${socket.id} (Reason: ${reason}) (Remaining: ${connectionCount})`);
+      
+      // Clean up interval
+      clearInterval(healthCheck);
       
       for (const [roomId, room] of rooms.entries()) {
         if (room.users.has(socket.id)) {
@@ -148,6 +179,11 @@ export default function SocketHandler(req, res) {
           break;
         }
       }
+    });
+    
+    // Handle errors
+    socket.on("error", (error) => {
+      console.error(`Socket error for ${socket.id}:`, error);
     });
   });
 

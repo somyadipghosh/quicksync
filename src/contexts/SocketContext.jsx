@@ -16,6 +16,8 @@ export const SocketProvider = ({ children }) => {
   const reconnectAttempts = useRef(0);
   const reconnectTimerRef = useRef(null);
   const socketRef = useRef(null);
+  const pingIntervalRef = useRef(null);
+  const connectionMonitorRef = useRef(null);
 
   // Initialize socket connection
   useEffect(() => {
@@ -33,8 +35,19 @@ export const SocketProvider = ({ children }) => {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
-        timeout: 20000,
+        reconnectionDelayMax: 5000,
+        randomizationFactor: 0.5,
+        timeout: 45000, // Increased to match server
         autoConnect: false, // We'll connect manually
+        withCredentials: false,
+        // Additional settings to match server-side
+        extraHeaders: {
+          "Accept": "application/json", 
+          "Content-Type": "application/json",
+        },
+        // Increase ping/pong timeouts to match server
+        pingTimeout: 60000,
+        pingInterval: 25000,
       });
       
       socketRef.current = socketInstance;
@@ -45,6 +58,25 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(true);
         setConnectionError(null);
         reconnectAttempts.current = 0;
+        
+        // Start a client-side ping to keep connection alive
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+        }
+        
+        pingIntervalRef.current = setInterval(() => {
+          if (socketInstance.connected) {
+            socketInstance.emit('ping');
+            // Monitor for pong response
+            const pongTimeout = setTimeout(() => {
+              console.log('No pong received, connection may be unstable');
+            }, 5000);
+            
+            socketInstance.once('pong', () => {
+              clearTimeout(pongTimeout);
+            });
+          }
+        }, 20000); // Ping every 20 seconds
         
         // If we had a room and were previously disconnected, rejoin it
         if (user && room) {
@@ -66,9 +98,34 @@ export const SocketProvider = ({ children }) => {
         console.log('Socket disconnected:', reason);
         setIsConnected(false);
         
-        if (reason === 'io server disconnect' || reason === 'transport close') {
-          // Server disconnected us, so we need to reconnect manually
+        // Clear ping interval on disconnect
+        if (pingIntervalRef.current) {
+          clearInterval(pingIntervalRef.current);
+        }
+        
+        if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'transport error') {
+          // Server disconnected us or transport issue, so we need to reconnect manually
           handleReconnect();
+        }
+      });
+
+      // Handle specific xhr-poll error which caused the disconnection in the screenshot
+      socketInstance.io.engine.on('packet', (packet) => {
+        // Monitor for error packets
+        if (packet.type === 'error') {
+          console.log('Error packet received:', packet.data);
+        }
+      });
+
+      // Monitor for polling transport errors specifically
+      socketInstance.io.engine.transport.on('error', (err) => {
+        console.error('Transport error:', err);
+        // Don't disconnect immediately, try to recover
+        if (socketInstance.io.engine.transport.name === 'polling') {
+          console.log('Polling transport error - attempting to recover');
+          
+          // Don't call disconnect here, the transport will try to recover
+          // Just prepare for potential disconnect event
         }
       });
 
@@ -98,6 +155,23 @@ export const SocketProvider = ({ children }) => {
       // Connect the socket
       socketInstance.connect();
       
+      // Set up a connection monitor to detect silent failures
+      connectionMonitorRef.current = setInterval(() => {
+        if (socketInstance.connected) {
+          // Connection is still active according to the client, validate
+          const lastActivityTime = socketInstance.io.engine.transport.pollXhr ? 
+            socketInstance.io.engine.transport.pollXhr.responseText.length : 0;
+          
+          if (lastActivityTime === 0 && reconnectAttempts.current === 0) {
+            console.log('Potential zombie connection detected - forcing reconnect');
+            socketInstance.disconnect();
+            setTimeout(() => {
+              socketInstance.connect();
+            }, 100);
+          }
+        }
+      }, 30000);
+      
     } catch (error) {
       console.error('Error initializing socket:', error);
       setConnectionError(`Failed to initialize socket: ${error.message}`);
@@ -112,6 +186,12 @@ export const SocketProvider = ({ children }) => {
       }
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
+      if (connectionMonitorRef.current) {
+        clearInterval(connectionMonitorRef.current);
       }
     };
   }, []);
@@ -130,6 +210,11 @@ export const SocketProvider = ({ children }) => {
       reconnectTimerRef.current = setTimeout(() => {
         if (socketRef.current) {
           console.log('Reconnecting...');
+          // Force close and recreate transport
+          if (socketRef.current.io && socketRef.current.io.engine) {
+            socketRef.current.io.engine.close();
+          }
+          // Reconnect
           socketRef.current.connect();
         }
       }, 2000);
@@ -148,15 +233,23 @@ export const SocketProvider = ({ children }) => {
       reconnectTimerRef.current = setTimeout(() => {
         reconnectAttempts.current = 0;
         
-        // Create a new socket instance
+        // Create a new socket instance with updated options
         const newSocket = io({
           path: "/socket.io/",
           transports: ['polling'],
-          reconnection: true,
+          reconnection: true, 
           reconnectionAttempts: 5,
           reconnectionDelay: 1000,
-          timeout: 20000,
+          reconnectionDelayMax: 5000,
+          timeout: 45000,
           autoConnect: true,
+          withCredentials: false,
+          extraHeaders: {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+          },
+          pingTimeout: 60000,
+          pingInterval: 25000,
         });
         
         socketRef.current = newSocket;
@@ -176,6 +269,17 @@ export const SocketProvider = ({ children }) => {
       setConnectionError(null);
       reconnectAttempts.current = 0;
       
+      // Start a client-side ping to keep connection alive
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
+      
+      pingIntervalRef.current = setInterval(() => {
+        if (socketInstance.connected) {
+          socketInstance.emit('ping');
+        }
+      }, 20000); // Ping every 20 seconds
+      
       // If we had a room, join it
       if (user && room) {
         socketInstance.emit('joinRoom', { user, roomId: room });
@@ -193,9 +297,19 @@ export const SocketProvider = ({ children }) => {
       console.log('Socket disconnected:', reason);
       setIsConnected(false);
       
-      if (reason === 'io server disconnect' || reason === 'transport close') {
+      // Clear ping interval on disconnect
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+      }
+      
+      if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'transport error') {
         handleReconnect();
       }
+    });
+    
+    // Monitor for polling transport errors
+    socketInstance.io.engine.transport.on('error', (err) => {
+      console.error('Transport error:', err);
     });
     
     socketInstance.on('message', (message) => {
@@ -213,6 +327,11 @@ export const SocketProvider = ({ children }) => {
     socketInstance.on('roomEnded', () => {
       alert('This room has been ended by the host.');
       window.location.href = '/rooms';
+    });
+    
+    // Listen for pong responses
+    socketInstance.on('pong', () => {
+      // Connection is still alive
     });
   };
 
