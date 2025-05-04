@@ -78,6 +78,22 @@ export const SocketProvider = ({ children }) => {
           }
         }, 20000); // Ping every 20 seconds
         
+        // Now that we're connected, we can safely set up transport-specific listeners
+        // as the transport object should be available
+        if (socketInstance.io && 
+            socketInstance.io.engine && 
+            socketInstance.io.engine.transport) {
+          
+          // Monitor for polling transport errors
+          socketInstance.io.engine.transport.on('error', (err) => {
+            console.error('Transport error:', err);
+            // Don't disconnect immediately, try to recover
+            if (socketInstance.io.engine.transport.name === 'polling') {
+              console.log('Polling transport error - attempting to recover');
+            }
+          });
+        }
+        
         // If we had a room and were previously disconnected, rejoin it
         if (user && room) {
           console.log(`Connected, joining room ${room}`);
@@ -109,25 +125,15 @@ export const SocketProvider = ({ children }) => {
         }
       });
 
-      // Handle specific xhr-poll error which caused the disconnection in the screenshot
-      socketInstance.io.engine.on('packet', (packet) => {
-        // Monitor for error packets
-        if (packet.type === 'error') {
-          console.log('Error packet received:', packet.data);
-        }
-      });
-
-      // Monitor for polling transport errors specifically
-      socketInstance.io.engine.transport.on('error', (err) => {
-        console.error('Transport error:', err);
-        // Don't disconnect immediately, try to recover
-        if (socketInstance.io.engine.transport.name === 'polling') {
-          console.log('Polling transport error - attempting to recover');
-          
-          // Don't call disconnect here, the transport will try to recover
-          // Just prepare for potential disconnect event
-        }
-      });
+      // Handle specific xhr-poll error which caused the disconnection - safely check first
+      if (socketInstance.io && socketInstance.io.engine) {
+        socketInstance.io.engine.on('packet', (packet) => {
+          // Monitor for error packets
+          if (packet && packet.type === 'error') {
+            console.log('Error packet received:', packet.data);
+          }
+        });
+      }
 
       // Handle incoming messages
       socketInstance.on('message', (message) => {
@@ -155,12 +161,17 @@ export const SocketProvider = ({ children }) => {
       // Connect the socket
       socketInstance.connect();
       
-      // Set up a connection monitor to detect silent failures
+      // Set up a connection monitor to detect silent failures - safely check properties
       connectionMonitorRef.current = setInterval(() => {
-        if (socketInstance.connected) {
+        if (socketInstance.connected && 
+            socketInstance.io && 
+            socketInstance.io.engine && 
+            socketInstance.io.engine.transport) {
+            
           // Connection is still active according to the client, validate
-          const lastActivityTime = socketInstance.io.engine.transport.pollXhr ? 
-            socketInstance.io.engine.transport.pollXhr.responseText.length : 0;
+          const pollXhr = socketInstance.io.engine.transport.pollXhr;
+          const lastActivityTime = pollXhr && pollXhr.responseText ? 
+            pollXhr.responseText.length : -1;
           
           if (lastActivityTime === 0 && reconnectAttempts.current === 0) {
             console.log('Potential zombie connection detected - forcing reconnect');
@@ -210,7 +221,7 @@ export const SocketProvider = ({ children }) => {
       reconnectTimerRef.current = setTimeout(() => {
         if (socketRef.current) {
           console.log('Reconnecting...');
-          // Force close and recreate transport
+          // Force close and recreate transport - safely check first
           if (socketRef.current.io && socketRef.current.io.engine) {
             socketRef.current.io.engine.close();
           }
@@ -280,6 +291,18 @@ export const SocketProvider = ({ children }) => {
         }
       }, 20000); // Ping every 20 seconds
       
+      // Now that we're connected, we can safely set up transport-specific listeners
+      // as the transport object should be available
+      if (socketInstance.io && 
+          socketInstance.io.engine && 
+          socketInstance.io.engine.transport) {
+          
+        // Monitor for polling transport errors
+        socketInstance.io.engine.transport.on('error', (err) => {
+          console.error('Transport error:', err);
+        });
+      }
+      
       // If we had a room, join it
       if (user && room) {
         socketInstance.emit('joinRoom', { user, roomId: room });
@@ -305,11 +328,6 @@ export const SocketProvider = ({ children }) => {
       if (reason === 'io server disconnect' || reason === 'transport close' || reason === 'transport error') {
         handleReconnect();
       }
-    });
-    
-    // Monitor for polling transport errors
-    socketInstance.io.engine.transport.on('error', (err) => {
-      console.error('Transport error:', err);
     });
     
     socketInstance.on('message', (message) => {
