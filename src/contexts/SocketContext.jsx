@@ -113,12 +113,19 @@ export const SocketProvider = ({ children }) => {
       }
     }, reconnectDelay);
   };
-
   // Set up message handlers for the service worker
   const setupMessageHandlers = () => {
     // Handle incoming messages
     swMessenger.on('message', (message) => {
       setMessages(prev => [...prev, message]);
+    });
+
+    // Handle previous messages when joining a room
+    swMessenger.on('previousMessages', (previousMessages) => {
+      console.log('Received previous messages:', previousMessages?.length || 0);
+      if (previousMessages && previousMessages.length > 0) {
+        setMessages(previousMessages);
+      }
     });
 
     // Handle room users updates
@@ -148,12 +155,27 @@ export const SocketProvider = ({ children }) => {
       console.log('Document shared:', documentData);
     });
   };
-
   // Join/leave room when user or room changes
   useEffect(() => {
     if (swRegistered.current && user && room) {
-      console.log(`Joining room ${room} as ${user.name}`);
-      swMessenger.sendMessage('joinRoom', { user, roomId: room }, room);
+      console.log(`Joining room ${room} as ${user?.name || 'unknown'}`);
+      // Ensure we have a valid user object with id and name
+      if (!user.id || !user.name) {
+        console.error('Invalid user object when joining room:', user);
+        return;
+      }
+      
+      // Give the service worker a moment to be fully active
+      setTimeout(() => {
+        swMessenger.sendMessage('joinRoom', { user, roomId: room }, room)
+          .catch(err => {
+            console.error('Error joining room:', err);
+            // Try once more after a slight delay
+            setTimeout(() => {
+              swMessenger.sendMessage('joinRoom', { user, roomId: room }, room);
+            }, 500);
+          });
+      }, 100);
       
       // Clean up when leaving room or unmounting
       return () => {

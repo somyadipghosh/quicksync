@@ -11,7 +11,6 @@ class ServiceWorkerMessenger {
     this.sendMessage = this.sendMessage.bind(this);
     this._onMessage = this._onMessage.bind(this);
   }
-
   // Register the service worker
   async register() {
     if (!('serviceWorker' in navigator)) {
@@ -23,25 +22,43 @@ class ServiceWorkerMessenger {
       const registration = await navigator.serviceWorker.register('/sw.js');
       console.log('ServiceWorker registration successful with scope:', registration.scope);
       
+      // First check if there's a controller already (page was loaded with SW active)
+      if (navigator.serviceWorker.controller) {
+        console.log('Using existing service worker controller');
+        this._sw = navigator.serviceWorker.controller;
+        this._isRegistered = true;
+        this._setupMessageListener();
+        this._processQueuedMessages();
+        return registration;
+      }
+      
       // Get the active service worker
       if (registration.active) {
         this._sw = registration.active;
         this._isRegistered = true;
         this._setupMessageListener();
         this._processQueuedMessages();
+        
+        // Force clients to use this SW right now
+        // Note: this will cause a refresh in some browsers
+        registration.active.postMessage({ type: 'CLAIM_CLIENTS' });
       } else {
         // Wait for the service worker to become active
-        const onStateChange = () => {
-          if (registration.active) {
-            this._sw = registration.active;
-            this._isRegistered = true;
-            this._setupMessageListener();
-            this._processQueuedMessages();
-            navigator.serviceWorker.removeEventListener('controllerchange', onStateChange);
-          }
-        };
-        
-        navigator.serviceWorker.addEventListener('controllerchange', onStateChange);
+        return new Promise((resolve) => {
+          const onStateChange = () => {
+            console.log('Controller change detected');
+            this._sw = navigator.serviceWorker.controller;
+            if (this._sw) {
+              this._isRegistered = true;
+              this._setupMessageListener();
+              this._processQueuedMessages();
+              navigator.serviceWorker.removeEventListener('controllerchange', onStateChange);
+              resolve(registration);
+            }
+          };
+          
+          navigator.serviceWorker.addEventListener('controllerchange', onStateChange);
+        });
       }
       
       return registration;
@@ -68,14 +85,17 @@ class ServiceWorkerMessenger {
       this._messageQueue = [];
     }
   }
-
   // Handle incoming messages from the Service Worker
   _onMessage(event) {
     const { type, data } = event.data;
     
+    console.log(`[SWMessenger] Received message of type: ${type}`);
+    
     if (this._messageHandlers.has(type)) {
       const handlers = this._messageHandlers.get(type);
       handlers.forEach(handler => handler(data));
+    } else {
+      console.warn(`[SWMessenger] No handler for message type: ${type}`);
     }
   }
 
@@ -106,24 +126,31 @@ class ServiceWorkerMessenger {
     
     return this;
   }
-
   // Send a message to the Service Worker
   sendMessage(type, data = {}, roomId = null) {
-    if (!this._isRegistered) {
+    if (!this._isRegistered || !this._sw) {
+      console.warn(`[SWMessenger] Tried to send message of type ${type} before SW is ready`);
       // Queue message for when SW is registered
       this._messageQueue.push({ type, data, roomId });
       return Promise.reject(new Error('Service Worker not registered yet'));
     }
     
-    const message = {
-      type,
-      data,
-      roomId,
-      clientId: this._clientId,
-      timestamp: Date.now()
-    };
-    
-    return this._sw.postMessage(message);
+    try {
+      const message = {
+        type,
+        data,
+        roomId,
+        clientId: this._clientId,
+        timestamp: Date.now()
+      };
+      
+      console.log(`[SWMessenger] Sending message of type: ${type}`);
+      this._sw.postMessage(message);
+      return Promise.resolve();
+    } catch (error) {
+      console.error(`[SWMessenger] Error sending message of type ${type}:`, error);
+      return Promise.reject(error);
+    }
   }
 
   // Check if the Service Worker is active

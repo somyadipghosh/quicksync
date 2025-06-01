@@ -7,11 +7,15 @@ let messageCounter = 0;     // To ensure unique message IDs
 
 // Install event - cache static resources
 self.addEventListener('install', (event) => {
-  console.log('[Service Worker] Installing Service Worker');
+  console.log('[Service Worker] Installing Service Worker', new Date().toISOString());
+  
+  // Force the waiting Service Worker to become the active Service Worker
   self.skipWaiting(); // Force activation
   
+  // Cache essential files
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
+      console.log('[Service Worker] Caching app shell');
       return cache.addAll([
         '/',
         '/index.html',
@@ -19,6 +23,8 @@ self.addEventListener('install', (event) => {
         '/assets/index.css'
         // Add other assets to cache as needed
       ]);
+    }).catch(err => {
+      console.error('[Service Worker] Cache failed:', err);
     })
   );
 });
@@ -38,6 +44,8 @@ self.addEventListener('activate', (event) => {
   );
   
   // Claim any clients that loaded prior to the service worker being ready
+  // This ensures the SW controls all clients immediately
+  console.log('[Service Worker] Claiming all clients');
   return self.clients.claim();
 });
 
@@ -58,6 +66,9 @@ const broadcastToRoom = async (roomId, eventName, data) => {
   });
 };
 
+// Store room messages
+const ROOM_MESSAGES = new Map(); // Store messages by room ID
+
 // Process messages from clients
 self.addEventListener('message', async (event) => {
   const { type, data, roomId, userId } = event.data;
@@ -68,6 +79,10 @@ self.addEventListener('message', async (event) => {
       // Add client to room
       if (!ROOMS.has(roomId)) {
         ROOMS.set(roomId, []);
+        // Initialize message storage for this room if it doesn't exist
+        if (!ROOM_MESSAGES.has(roomId)) {
+          ROOM_MESSAGES.set(roomId, []);
+        }
       }
       
       const roomClients = ROOMS.get(roomId);
@@ -92,6 +107,15 @@ self.addEventListener('message', async (event) => {
         .map(({ userId, name }) => ({ id: userId, name }));
       
       broadcastToRoom(roomId, 'roomUsers', roomUsers);
+      
+      // Send previously stored messages to the newly joined client
+      const previousMessages = ROOM_MESSAGES.get(roomId) || [];
+      console.log(`[SW] Sending ${previousMessages.length} previous messages to new client`);
+      event.source.postMessage({
+        type: 'previousMessages',
+        data: previousMessages,
+        roomId: roomId
+      });
       break;
       
     case 'leaveRoom':
@@ -120,18 +144,32 @@ self.addEventListener('message', async (event) => {
         broadcastToRoom(roomId, 'roomUsers', roomUsers);
       }
       break;
-      
-    case 'message':
+        case 'message':
       // Add timestamp if not provided
       const message = {
         ...data,
         timestamp: data.timestamp || new Date().toISOString()
       };
       
-      // Store message in room history (simplified - in real app, use IndexedDB)
+      // Store message in room history 
       if (!ROOMS.has(roomId)) {
         ROOMS.set(roomId, []);
       }
+      
+      // Initialize message storage for this room if needed
+      if (!ROOM_MESSAGES.has(roomId)) {
+        ROOM_MESSAGES.set(roomId, []);
+      }
+      
+      // Store the message in the room history (limit to last 100 messages)
+      const roomMessages = ROOM_MESSAGES.get(roomId);
+      roomMessages.push(message);
+      if (roomMessages.length > 100) {
+        roomMessages.shift(); // Remove oldest message if more than 100
+      }
+      ROOM_MESSAGES.set(roomId, roomMessages);
+      
+      console.log(`[SW] Storing message in room ${roomId}, total: ${roomMessages.length}`);
       
       // Broadcast message to all clients in the room
       broadcastToRoom(roomId, 'message', message);
@@ -156,12 +194,19 @@ self.addEventListener('message', async (event) => {
         ROOMS.delete(roomId);
       }
       break;
-      
-    case 'ping':
+        case 'ping':
       // Send pong directly to the client that sent the ping
       event.source.postMessage({
         type: 'pong',
         timestamp: Date.now()
+      });
+      break;
+      
+    case 'CLAIM_CLIENTS':
+      // Force claim all clients
+      console.log('[SW] Claiming all clients');
+      self.clients.claim().then(() => {
+        console.log('[SW] All clients claimed');
       });
       break;
   }
