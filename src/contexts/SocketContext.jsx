@@ -115,19 +115,27 @@ export const SocketProvider = ({ children }) => {
   };
   // Set up message handlers for the service worker
   const setupMessageHandlers = () => {    // Handle incoming messages
-    swMessenger.on('message', (message) => {
-      console.log('Received new message to display:', message);
+    swMessenger.on('message', (messageData) => {
+      console.log('Received new message to display:', messageData);
+      // Check if the message is nested in a data property as the service worker wraps it
+      const message = messageData.data || messageData;
+      
+      // Add directly to local UI state
       setMessages(prevMessages => {
         console.log('Current messages count:', prevMessages.length);
+        console.log('Adding message with content:', message.text);
         return [...prevMessages, message];
       });
-    });
-
-    // Handle previous messages when joining a room
-    swMessenger.on('previousMessages', (previousMessages) => {
+    });    // Handle previous messages when joining a room
+    swMessenger.on('previousMessages', (messageData) => {
+      // The data might be nested inside a data property
+      const previousMessages = messageData.data || messageData;
       console.log('Received previous messages:', previousMessages?.length || 0);
       if (previousMessages && previousMessages.length > 0) {
+        console.log('Setting messages to:', previousMessages);
         setMessages(previousMessages);
+      } else {
+        console.log('No previous messages to set');
       }
     });
 
@@ -189,8 +197,7 @@ export const SocketProvider = ({ children }) => {
       };
     }
   }, [user, room]);
-  // Message sending function
-  const sendMessage = (text) => {
+  // Message sending function  const sendMessage = (text) => {
     if (swRegistered.current && user && room) {
       const messageData = {
         user: user.name,
@@ -200,6 +207,9 @@ export const SocketProvider = ({ children }) => {
       };
       
       console.log('Sending message:', messageData);
+      
+      // Immediately add to local messages for instant feedback
+      setMessages(prevMessages => [...prevMessages, messageData]);
       
       swMessenger.sendMessage('message', messageData, room)
         .then(() => {

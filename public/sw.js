@@ -181,9 +181,16 @@ self.addEventListener('message', async (event) => {
       ROOM_MESSAGES.set(roomId, roomMessages);
       
       console.log(`[SW] Storing message in room ${roomId}, total: ${roomMessages.length}`);
-      
-      // Broadcast message to all clients in the room
+        // Broadcast message to all clients in the room
       broadcastToRoom(roomId, 'message', message);
+      
+      // For debugging, also send directly to the sender to confirm receipt
+      event.source.postMessage({
+        type: 'message',
+        data: message,
+        roomId: roomId,
+        messageId: `msg_${Date.now()}_${messageCounter++}`
+      });
       break;
       
     case 'shareDocument':

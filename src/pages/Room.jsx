@@ -40,10 +40,10 @@ const Room = () => {
       setReconnecting(false);
     }
   }, [isConnected, connectionError, reconnecting]);
-
-  // Scroll to bottom of messages
+  // Scroll to bottom of messages and debug message array
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    console.log('Current messages array:', messages);
   }, [messages]);
   const handleSendMessage = (e) => {
     e.preventDefault();
@@ -101,6 +101,9 @@ const Room = () => {
   };
 
   if (!user || !room) return null;
+  
+  // For debugging message state
+  console.log('Rendering Room with messages:', messages);
 
   return (
     <Layout>
@@ -232,45 +235,49 @@ const Room = () => {
                 <div className="text-center text-gray-500 pt-10">
                   <p>No messages yet. Start the conversation!</p>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {messages.map((msg, index) => (
-                    <div 
-                      key={index}
-                      className={`flex ${msg.userId === user.id ? 'justify-end' : 'justify-start'}`}
-                    >
+              ) : (                <div className="space-y-4">
+                  {messages.map((msg, index) => {
+                    console.log('Rendering message:', msg);
+                    // Extract the message properly, handling potential nesting
+                    const message = msg.data || msg;
+                    return (
                       <div 
-                        className={`max-w-[75%] rounded-lg px-4 py-2 ${
-                          msg.userId === user.id 
-                            ? 'bg-blue-500 text-white rounded-br-none' 
-                            : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                        }`}
+                        key={index}
+                        className={`flex ${message.userId === user.id ? 'justify-end' : 'justify-start'}`}
                       >
-                        {msg.userId !== user.id && (
-                          <div className="text-xs font-medium mb-1">
-                            {msg.user}
+                        <div 
+                          className={`max-w-[75%] rounded-lg px-4 py-2 ${
+                            message.userId === user.id 
+                              ? 'bg-blue-500 text-white rounded-br-none' 
+                              : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                          }`}
+                        >
+                          {message.userId !== user.id && (
+                            <div className="text-xs font-medium mb-1">
+                              {message.user}
+                            </div>
+                          )}
+                          {message.type === 'document' ? (
+                            <div>
+                              <div className="font-medium">{message.text}</div>
+                              <a 
+                                href={message.document.data} 
+                                download={message.document.name}
+                                className="text-sm underline"
+                              >
+                                Download ({Math.round(message.document.size / 1024)} KB)
+                              </a>
+                            </div>
+                          ) : (
+                            <div>{message.text}</div>
+                          )}
+                          <div className="text-xs opacity-70 text-right mt-1">
+                            {new Date(message.timestamp).toLocaleTimeString()}
                           </div>
-                        )}
-                        {msg.type === 'document' ? (
-                          <div>
-                            <div className="font-medium">{msg.text}</div>
-                            <a 
-                              href={msg.document.data} 
-                              download={msg.document.name}
-                              className="text-sm underline"
-                            >
-                              Download ({Math.round(msg.document.size / 1024)} KB)
-                            </a>
-                          </div>
-                        ) : (
-                          <div>{msg.text}</div>
-                        )}
-                        <div className="text-xs opacity-70 text-right mt-1">
-                          {new Date(msg.timestamp).toLocaleTimeString()}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div ref={messagesEndRef} />
                 </div>
               )}
