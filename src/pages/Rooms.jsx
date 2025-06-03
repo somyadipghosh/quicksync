@@ -18,9 +18,13 @@ const Rooms = () => {
       navigate('/welcome');
     }
   }, [user, navigate]);
-
   const handleCreateRoom = () => {
-    const newRoomId = uuidv4();
+    // Generate a random 4-character room code using alphanumeric characters
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let newRoomId = '';
+    for (let i = 0; i < 4; i++) {
+      newRoomId += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
     createRoom(newRoomId);
     navigate(`/room/${newRoomId}`);
   };

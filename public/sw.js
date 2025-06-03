@@ -54,16 +54,25 @@ const broadcastToRoom = async (roomId, eventName, data) => {
   const roomClients = ROOMS.get(roomId) || [];
   const clients = await self.clients.matchAll();
   
+  console.log(`[SW] Broadcasting ${eventName} to room ${roomId}, clients: ${roomClients.length}`);
+  
+  let broadcastCount = 0;
   clients.forEach(client => {
     if (roomClients.includes(client.id)) {
-      client.postMessage({
+      const message = {
         type: eventName,
         data: data,
         roomId: roomId,
         messageId: `msg_${Date.now()}_${messageCounter++}`
-      });
+      };
+      
+      client.postMessage(message);
+      broadcastCount++;
+      console.log(`[SW] Sent ${eventName} to client ${client.id}`);
     }
   });
+  
+  console.log(`[SW] Broadcast complete. Sent to ${broadcastCount} clients`);
 };
 
 // Store room messages
@@ -144,12 +153,14 @@ self.addEventListener('message', async (event) => {
         broadcastToRoom(roomId, 'roomUsers', roomUsers);
       }
       break;
-        case 'message':
+    case 'message':
       // Add timestamp if not provided
       const message = {
         ...data,
         timestamp: data.timestamp || new Date().toISOString()
       };
+      
+      console.log(`[SW] Received message: ${JSON.stringify(message)}`);
       
       // Store message in room history 
       if (!ROOMS.has(roomId)) {

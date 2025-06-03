@@ -45,12 +45,23 @@ const Room = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
-
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (messageInput.trim() && isConnected) {
       sendMessage(messageInput.trim());
       setMessageInput('');
+      console.log('Message sent:', messageInput.trim());
+    }
+  };
+  
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (messageInput.trim() && isConnected) {
+        sendMessage(messageInput.trim());
+        setMessageInput('');
+        console.log('Message sent via Enter key:', messageInput.trim());
+      }
     }
   };
 
@@ -267,11 +278,11 @@ const Room = () => {
 
             {/* Input area */}
             <div className="border-t border-gray-200 p-4">
-              <form onSubmit={handleSendMessage} className="flex gap-2">
-                <input
+              <form onSubmit={handleSendMessage} className="flex gap-2">                <input
                   type="text"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Type a message..."
                   disabled={!isConnected}

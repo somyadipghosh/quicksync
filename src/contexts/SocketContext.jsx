@@ -114,10 +114,13 @@ export const SocketProvider = ({ children }) => {
     }, reconnectDelay);
   };
   // Set up message handlers for the service worker
-  const setupMessageHandlers = () => {
-    // Handle incoming messages
+  const setupMessageHandlers = () => {    // Handle incoming messages
     swMessenger.on('message', (message) => {
-      setMessages(prev => [...prev, message]);
+      console.log('Received new message to display:', message);
+      setMessages(prevMessages => {
+        console.log('Current messages count:', prevMessages.length);
+        return [...prevMessages, message];
+      });
     });
 
     // Handle previous messages when joining a room
@@ -186,7 +189,6 @@ export const SocketProvider = ({ children }) => {
       };
     }
   }, [user, room]);
-
   // Message sending function
   const sendMessage = (text) => {
     if (swRegistered.current && user && room) {
@@ -197,7 +199,27 @@ export const SocketProvider = ({ children }) => {
         timestamp: new Date().toISOString(),
       };
       
-      swMessenger.sendMessage('message', messageData, room);
+      console.log('Sending message:', messageData);
+      
+      swMessenger.sendMessage('message', messageData, room)
+        .then(() => {
+          console.log('Message sent successfully');
+        })
+        .catch(error => {
+          console.error('Error sending message:', error);
+          // Optionally handle the error by displaying a notification to the user
+          setConnectionError('Failed to send message. Please try again.');
+          
+          // Try to reconnect
+          if (!isConnected) {
+            handleReconnect();
+          }
+        });
+    } else {
+      console.error('Cannot send message: Not connected, missing user, or missing room');
+      if (!swRegistered.current) console.error('Service worker not registered');
+      if (!user) console.error('User not defined');
+      if (!room) console.error('Room not defined');
     }
   };
 
