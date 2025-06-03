@@ -101,9 +101,9 @@ const Room = () => {
   };
 
   if (!user || !room) return null;
-  
-  // For debugging message state
+    // For debugging message and user state
   console.log('Rendering Room with messages:', messages);
+  console.log('Current room users:', roomUsers);
 
   return (
     <Layout>
@@ -133,12 +133,11 @@ const Room = () => {
                 </p>
               )}
             </div>
-            <div className="flex gap-2">
-              <Button 
+            <div className="flex gap-2">              <Button 
                 variant="secondary" 
                 onClick={() => setShowUserList(!showUserList)}
               >
-                Participants ({roomUsers.length || 1})
+                Participants ({Array.isArray(roomUsers) && roomUsers.length > 0 ? roomUsers.length : 1})
               </Button>
               {isRoomCreator ? (
                 <Button variant="danger" onClick={handleEndRoom} disabled={!isConnected}>
@@ -207,14 +206,13 @@ const Room = () => {
                     {isRoomCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
                   </div>
                 </li>
-                
-                {/* Other users in the room */}
-                {roomUsers.length > 0 ? 
+                  {/* Other users in the room */}
+                {Array.isArray(roomUsers) && roomUsers.filter(roomUser => roomUser?.id !== user?.id).length > 0 ? 
                   roomUsers
-                    .filter(roomUser => roomUser.id !== user.id)
+                    .filter(roomUser => roomUser?.id && roomUser.id !== user.id)
                     .map((roomUser, index) => (
                       <li key={index} className="py-2 border-b border-gray-100">
-                        <span className="font-medium">{roomUser.name}</span>
+                        <span className="font-medium">{roomUser.name || "Unknown User"}</span>
                         {roomUser.isCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
                       </li>
                     ))

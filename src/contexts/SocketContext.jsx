@@ -137,12 +137,21 @@ export const SocketProvider = ({ children }) => {
       } else {
         console.log('No previous messages to set');
       }
-    });
-
-    // Handle room users updates
-    swMessenger.on('roomUsers', (users) => {
-      console.log('Room users updated:', users?.length || 0);
-      setRoomUsers(users || []);
+    });    // Handle room users updates
+    swMessenger.on('roomUsers', (userData) => {
+      // Extract users from the potential nested structure
+      const users = userData.data || userData;
+      console.log('Room users updated, data received:', userData);
+      console.log('Room users extracted:', users);
+      console.log('Room users count:', users?.length || 0);
+      
+      // Ensure we have a valid array
+      if (users && Array.isArray(users)) {
+        setRoomUsers(users);
+      } else {
+        console.error('Invalid room users data received:', userData);
+        setRoomUsers([]);
+      }
     });
 
     // Handle room ended notification
@@ -165,20 +174,40 @@ export const SocketProvider = ({ children }) => {
       // Handle shared document (implementation depends on your app's needs)
       console.log('Document shared:', documentData);
     });
-  };
-  // Join/leave room when user or room changes
+  };  // Join/leave room when user or room changes
   useEffect(() => {
     if (swRegistered.current && user && room) {
       console.log(`Joining room ${room} as ${user?.name || 'unknown'}`);
+      
       // Ensure we have a valid user object with id and name
       if (!user.id || !user.name) {
         console.error('Invalid user object when joining room:', user);
         return;
       }
       
-      // Give the service worker a moment to be fully active
+      // Clear current participants list when joining a new room
+      setRoomUsers([]);
+      
+      // For debugging, check all user data for this room
+      setTimeout(() => {
+        console.log('Room join event - requesting current users');
+        swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
+          .catch(err => console.error('Error requesting room users:', err));
+      }, 1000);
+        // Give the service worker a moment to be fully active
       setTimeout(() => {
         swMessenger.sendMessage('joinRoom', { user, roomId: room }, room)
+          .then(() => {
+            // Add ourselves to the local roomUsers state as a fallback
+            console.log('Adding self to roomUsers as fallback');
+            setRoomUsers(prev => {
+              const userExists = prev.some(u => u.id === user.id);
+              if (!userExists) {
+                return [...prev, { id: user.id, name: user.name }];
+              }
+              return prev;
+            });
+          })
           .catch(err => {
             console.error('Error joining room:', err);
             // Try once more after a slight delay

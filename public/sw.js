@@ -109,13 +109,20 @@ self.addEventListener('message', async (event) => {
       });
       
       console.log(`[SW] User ${data.user.name} joined room ${roomId}`);
-      
-      // Notify all clients in the room about updated user list
+        // Notify all clients in the room about updated user list
       const roomUsers = [...USERS.values()]
         .filter(user => user.roomId === roomId)
         .map(({ userId, name }) => ({ id: userId, name }));
       
+      console.log(`[SW] Broadcasting updated user list for room ${roomId}:`, roomUsers);
       broadcastToRoom(roomId, 'roomUsers', roomUsers);
+      
+      // Also send directly to the newly joined client for immediate UI update
+      event.source.postMessage({
+        type: 'roomUsers',
+        data: roomUsers,
+        roomId: roomId
+      });
       
       // Send previously stored messages to the newly joined client
       const previousMessages = ROOM_MESSAGES.get(roomId) || [];
@@ -143,14 +150,16 @@ self.addEventListener('message', async (event) => {
       if (userData) {
         USERS.delete(clientId);
       }
-      
-      // Notify remaining clients about updated user list
+        // Notify remaining clients about updated user list
       if (ROOMS.has(roomId)) {
         const roomUsers = [...USERS.values()]
           .filter(user => user.roomId === roomId)
           .map(({ userId, name }) => ({ id: userId, name }));
         
+        console.log(`[SW] User left room ${roomId}, broadcasting updated user list:`, roomUsers);
         broadcastToRoom(roomId, 'roomUsers', roomUsers);
+      } else {
+        console.log(`[SW] Last user left room ${roomId}, room has been removed`);
       }
       break;
     case 'message':
@@ -218,6 +227,20 @@ self.addEventListener('message', async (event) => {
         type: 'pong',
         timestamp: Date.now()
       });
+      break;
+        case 'requestRoomUsers':
+      if (roomId) {
+        const roomUsers = [...USERS.values()]
+          .filter(user => user.roomId === roomId)
+          .map(({ userId, name }) => ({ id: userId, name }));
+        
+        console.log(`[SW] Responding to request for room ${roomId} users:`, roomUsers);
+        event.source.postMessage({
+          type: 'roomUsers',
+          data: roomUsers,
+          roomId: roomId
+        });
+      }
       break;
       
     case 'CLAIM_CLIENTS':
