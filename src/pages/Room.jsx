@@ -336,45 +336,40 @@ const Room = () => {
                 <div className="text-center text-gray-500 pt-10">
                   <p>No messages yet. Start the conversation!</p>
                 </div>
-              ) : (                <div className="space-y-4">
-                  {/* Use a Set to keep track of message IDs we've already seen */}
-                  {(() => {
-                    const seenIds = new Set();
-                    return messages
-                      // Filter out duplicates based on message ID if it exists
-                      .filter(msg => {
-                        const message = msg.data || msg;
-                        if (!message.id) return true; // Keep messages without IDs
-                        
-                        if (seenIds.has(message.id)) {
-                          console.log('Skipping duplicate message ID:', message.id);
-                          return false; // Skip duplicates
-                        }
-                        
-                        seenIds.add(message.id);
-                        return true;
-                      })
-                      .map((msg, index) => {
-                        console.log('Rendering message:', msg);
-                        // Extract the message properly, handling potential nesting
-                        const message = msg.data || msg;
-                        return (
-                          <div 
-                            key={message.id || index}
-                            className={`flex ${message.userId === user.id ? 'justify-end' : 'justify-start'}`}
-                          >
+              ) : (                <div className="space-y-4">                  {/* Process and render messages */}
+                  {messages
+                    .filter(msg => {
+                      // Deduplicate messages by ID
+                      const message = msg.data || msg;
+                      if (!message.id) return true;
+                      
+                      // Check if we've already seen this message ID
+                      const isDuplicate = messages.some((m, i) => {
+                        const otherMsg = m.data || m;
+                        return otherMsg.id === message.id && messages.indexOf(m) < messages.indexOf(msg);
+                      });
+                      
+                      return !isDuplicate;
+                    })
+                    .map((msg, index) => {
+                      const message = msg.data || msg;
+                      return (
                         <div 
-                          className={`max-w-[75%] rounded-lg px-4 py-2 ${
-                            message.userId === user.id 
-                              ? 'bg-blue-500 text-white rounded-br-none' 
-                              : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                          }`}
+                          key={message.id || index}
+                          className={`flex ${message.userId === user.id ? 'justify-end' : 'justify-start'}`}
                         >
-                          {message.userId !== user.id && (
-                            <div className="text-xs font-medium mb-1">
-                              {message.user}
-                            </div>
-                          )}                          {message.type === 'document' ? (                            <div className="document-message">
+                          <div 
+                            className={`max-w-[75%] rounded-lg px-4 py-2 ${
+                              message.userId === user.id 
+                                ? 'bg-blue-500 text-white rounded-br-none' 
+                                : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                            }`}
+                          >
+                            {message.userId !== user.id && (
+                              <div className="text-xs font-medium mb-1">
+                                {message.user}
+                              </div>
+                            )}                          {message.type === 'document' ? (                            <div className="document-message">
                               <div className="font-medium mb-1">{message.text}</div>
                               
                               {/* Preview for image files */}
@@ -413,14 +408,13 @@ const Room = () => {
                             </div>
                           ) : (
                             <div>{message.text}</div>
-                          )}
-                          <div className="text-xs opacity-70 text-right mt-1">
+                          )}                          <div className="text-xs opacity-70 text-right mt-1">
                             {new Date(message.timestamp).toLocaleTimeString()}
                           </div>
                         </div>
                       </div>
                     );
-                  })}
+                  })()}
                   <div ref={messagesEndRef} />
                 </div>
               )}
