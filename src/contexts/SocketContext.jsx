@@ -226,7 +226,8 @@ export const SocketProvider = ({ children }) => {
       };
     }
   }, [user, room]);
-  // Message sending function  const sendMessage = (text) => {
+  // Message sending function
+  const sendMessage = (text) => {
     if (swRegistered.current && user && room) {
       const messageData = {
         user: user.name,
