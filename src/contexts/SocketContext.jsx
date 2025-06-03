@@ -32,16 +32,28 @@ export const SocketProvider = ({ children }) => {
         setConnectionError(null);
         
         console.log('Service Worker registered successfully');
-        
-        // Set up heartbeat to keep connection alive
+          // Set up heartbeat to keep connection alive
         heartbeatIntervalRef.current = setInterval(() => {
+          // Send ping to check connection
           swMessenger.sendMessage('ping')
             .catch(err => {
               console.error('Heartbeat failed:', err);
               // If ping fails, we may need to re-register the SW
               handleReconnect();
             });
-        }, 30000); // Ping every 30 seconds
+          
+          // Also send more detailed heartbeat with user info if in a room
+          // This helps recover from page refreshes and reconnections
+          if (user && room) {
+            swMessenger.sendMessage('heartbeat', {
+              userId: user.id,
+              name: user.name,
+              roomId: room,
+              isCreator: isRoomCreator,
+              rejoin: true
+            }).catch(err => console.error('Detailed heartbeat failed:', err));
+          }
+        }, 20000); // Every 20 seconds
 
         // If we had a room and registered successfully, join it
         if (user && room) {
@@ -147,10 +159,36 @@ export const SocketProvider = ({ children }) => {
       
       // Ensure we have a valid array
       if (users && Array.isArray(users)) {
-        setRoomUsers(users);
+        // Ensure the current user is always in the list
+        setRoomUsers(prevUsers => {
+          // Create a map of all existing users by ID for quick lookup
+          const updatedUsers = [...users];
+          const userIds = new Set(updatedUsers.map(u => u.id));
+          
+          // If current user isn't in the list, add them
+          if (user && user.id && !userIds.has(user.id)) {
+            console.log('Current user not found in roomUsers, adding them');
+            updatedUsers.push({
+              id: user.id,
+              name: user.name,
+              isCreator: isRoomCreator
+            });
+          }
+          
+          return updatedUsers;
+        });
       } else {
         console.error('Invalid room users data received:', userData);
-        setRoomUsers([]);
+        // Even with invalid data, make sure current user is in list
+        if (user) {
+          setRoomUsers([{
+            id: user.id,
+            name: user.name,
+            isCreator: isRoomCreator
+          }]);
+        } else {
+          setRoomUsers([]);
+        }
       }
     });
 
@@ -202,38 +240,86 @@ export const SocketProvider = ({ children }) => {
         console.error('Invalid user object when joining room:', user);
         return;
       }
-      
-      // Clear current participants list when joining a new room
+        // Clear current participants list when joining a new room
       setRoomUsers([]);
       
-      // For debugging, check all user data for this room
+      // Track join success status
+      let joinSuccessful = false;
+      
+      // Function to add ourselves to the room users list as a fallback
+      const ensureSelfInRoomUsers = () => {
+        console.log('Ensuring self is in roomUsers list');
+        setRoomUsers(prev => {
+          const userExists = prev.some(u => u.id === user.id);
+          if (!userExists) {
+            console.log('Adding self to roomUsers as not found in current list');
+            return [...prev, { 
+              id: user.id, 
+              name: user.name, 
+              isCreator: isRoomCreator 
+            }];
+          }
+          return prev;
+        });
+      };
+
+      // Give the service worker a moment to be fully active
       setTimeout(() => {
-        console.log('Room join event - requesting current users');
-        swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
-          .catch(err => console.error('Error requesting room users:', err));
-      }, 1000);
-        // Give the service worker a moment to be fully active
-      setTimeout(() => {
-        swMessenger.sendMessage('joinRoom', { user, roomId: room }, room)
+        // Include isRoomCreator flag in the user object
+        const enhancedUser = { ...user, isRoomCreator };
+        
+        console.log('Joining room with user data:', enhancedUser);
+        
+        swMessenger.sendMessage('joinRoom', { user: enhancedUser, roomId: room }, room)
           .then(() => {
-            // Add ourselves to the local roomUsers state as a fallback
-            console.log('Adding self to roomUsers as fallback');
-            setRoomUsers(prev => {
-              const userExists = prev.some(u => u.id === user.id);
-              if (!userExists) {
-                return [...prev, { id: user.id, name: user.name }];
-              }
-              return prev;
-            });
+            joinSuccessful = true;
+            console.log('Joined room successfully, waiting for room users update');
+            
+            // Request room users immediately
+            swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
+              .catch(err => console.error('Error requesting room users:', err));
+            
+            // Add ourselves as fallback
+            ensureSelfInRoomUsers();
           })
           .catch(err => {
             console.error('Error joining room:', err);
             // Try once more after a slight delay
             setTimeout(() => {
-              swMessenger.sendMessage('joinRoom', { user, roomId: room }, room);
+              swMessenger.sendMessage('joinRoom', { user: enhancedUser, roomId: room }, room)
+                .then(() => {
+                  joinSuccessful = true;
+                  // Add ourselves as fallback if the retry was successful
+                  ensureSelfInRoomUsers();
+                })
+                .catch(error => {
+                  console.error('Second attempt to join room failed:', error);
+                  // Even if SW failed, ensure we see ourselves in the UI
+                  ensureSelfInRoomUsers();
+                });
             }, 500);
           });
       }, 100);
+      
+      // Periodically check & request room users to ensure the list stays updated
+      const roomUsersInterval = setInterval(() => {
+        if (joinSuccessful) {
+          console.log('Periodic room users refresh');
+          swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
+            .catch(err => console.error('Error in periodic room users request:', err));
+          
+          // Make sure we're still in the list
+          ensureSelfInRoomUsers();
+        }
+      }, 10000); // Every 10 seconds
+      
+      return () => {
+        if (roomUsersInterval) clearInterval(roomUsersInterval);
+        if (swRegistered.current && room) {
+          console.log(`Leaving room ${room}`);
+          swMessenger.sendMessage('leaveRoom', {}, room);
+        }
+      };
       
       // Clean up when leaving room or unmounting
       return () => {

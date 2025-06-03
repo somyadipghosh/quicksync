@@ -25,7 +25,6 @@ const Room = () => {
       navigate('/welcome');
     }
   }, [user, navigate]);
-
   // Handle reconnection attempts
   useEffect(() => {
     if (connectionError && !reconnecting) {
@@ -39,7 +38,20 @@ const Room = () => {
     if (isConnected && reconnecting) {
       setReconnecting(false);
     }
-  }, [isConnected, connectionError, reconnecting]);  // Scroll to bottom of messages and debug message array
+  }, [isConnected, connectionError, reconnecting]);
+  
+  // Debug room users and ensure we have valid data
+  useEffect(() => {
+    console.log('Current room users:', roomUsers);
+    
+    // If we don't have any room users but we're connected, add ourselves
+    if (isConnected && user && (!roomUsers || roomUsers.length === 0)) {
+      console.log('No room users found, adding self as fallback');
+      // We'll use the internal state as a fallback if roomUsers is empty
+    }
+  }, [roomUsers, user, isConnected]);
+  
+  // Scroll to bottom of messages and debug message array
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     console.log('Current messages array:', messages);
@@ -144,13 +156,30 @@ const Room = () => {
                   {reconnecting ? 'Attempting to reconnect...' : `Error: ${connectionError}`}
                 </p>
               )}
-            </div>
-            <div className="flex gap-2">              <Button 
-                variant="secondary" 
-                onClick={() => setShowUserList(!showUserList)}
-              >
-                Participants ({Array.isArray(roomUsers) && roomUsers.length > 0 ? roomUsers.length : 1})
-              </Button>
+            </div>            <div className="flex gap-2">
+              <div className="flex space-x-1">
+                <Button 
+                  variant="secondary" 
+                  onClick={() => setShowUserList(!showUserList)}
+                >
+                  Participants ({Array.isArray(roomUsers) && roomUsers.length > 0 ? roomUsers.length : 1})
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    console.log('Manually refreshing participants');
+                    if (isConnected && room) {
+                      navigator.serviceWorker.controller?.postMessage({
+                        type: 'requestRoomUsers',
+                        roomId: room
+                      });
+                    }
+                  }}
+                  title="Refresh participants list"
+                >
+                  ↻
+                </Button>
+              </div>
               {isRoomCreator ? (
                 <Button variant="danger" onClick={handleEndRoom} disabled={!isConnected}>
                   End Room
@@ -210,29 +239,52 @@ const Room = () => {
           {showUserList && (
             <div className="lg:col-span-1 bg-white shadow-sm rounded-lg p-4 h-[70vh] overflow-y-auto">
               <h3 className="font-bold mb-4">Participants</h3>
-              <ul>
-                {/* Current user always shown at top */}
+              <ul>                {/* Current user always shown at top */}
                 <li className="py-2 border-b border-gray-100 flex items-center justify-between">
                   <div>
                     <span className="font-medium">{user.name} (You)</span>
                     {isRoomCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
                   </div>
                 </li>
-                  {/* Other users in the room */}
-                {Array.isArray(roomUsers) && roomUsers.filter(roomUser => roomUser?.id !== user?.id).length > 0 ? 
+                
+                {/* Show others already in the room */}
+                {Array.isArray(roomUsers) && roomUsers.length > 0 ? (
                   roomUsers
-                    .filter(roomUser => roomUser?.id && roomUser.id !== user.id)
+                    .filter(roomUser => 
+                      // Ensure we have valid data and filter out current user
+                      roomUser && roomUser.id && roomUser.id !== user.id
+                    )
                     .map((roomUser, index) => (
-                      <li key={index} className="py-2 border-b border-gray-100">
+                      <li key={`user-${roomUser.id}-${index}`} className="py-2 border-b border-gray-100">
                         <span className="font-medium">{roomUser.name || "Unknown User"}</span>
                         {roomUser.isCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
                       </li>
                     ))
-                  : 
+                ) : (
                   <li className="py-2 text-gray-500 text-sm italic">
                     No other participants yet
                   </li>
-                }
+                )}
+                
+                {/* Add refresh button to manually refresh participant list */}
+                <li className="mt-2 py-2">
+                  <button 
+                    onClick={() => {
+                      if (isConnected) {
+                        // Request room users update
+                        console.log('Manually requesting room users update');
+                        // Access the SocketContext functions directly
+                        navigator.serviceWorker.controller?.postMessage({
+                          type: 'requestRoomUsers',
+                          roomId
+                        });
+                      }
+                    }}
+                    className="text-xs text-blue-500 hover:text-blue-700"
+                  >
+                    Refresh Participants List
+                  </button>
+                </li>
               </ul>
             </div>
           )}

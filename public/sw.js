@@ -78,6 +78,65 @@ const broadcastToRoom = async (roomId, eventName, data) => {
 // Store room messages
 const ROOM_MESSAGES = new Map(); // Store messages by room ID
 
+// Heartbeat tracking - maps clientId to last heartbeat time
+const CLIENT_HEARTBEATS = new Map(); 
+
+// Periodic check for inactive clients (every 60 seconds)
+setInterval(async () => {
+  console.log('[SW] Running inactive client check...');
+  const now = Date.now();
+  const inactiveTimeout = 3 * 60 * 1000; // 3 minutes
+  
+  // Get all connected clients
+  const clients = await self.clients.matchAll();
+  const activeClientIds = new Set(clients.map(client => client.id));
+  
+  // Find clients that haven't sent a heartbeat recently
+  const inactiveClients = [];
+  for (const [clientId, lastHeartbeat] of CLIENT_HEARTBEATS.entries()) {
+    // Client is inactive if: no heartbeat for 3 minutes OR client is not in the active client list
+    if ((now - lastHeartbeat > inactiveTimeout) || !activeClientIds.has(clientId)) {
+      inactiveClients.push(clientId);
+    }
+  }
+  
+  // Clean up inactive clients
+  for (const clientId of inactiveClients) {
+    console.log(`[SW] Client ${clientId} is inactive, cleaning up...`);
+    CLIENT_HEARTBEATS.delete(clientId);
+    
+    // Get user data before removing
+    const userData = USERS.get(clientId);
+    if (userData) {
+      const { roomId } = userData;
+      
+      // Remove from rooms
+      if (roomId && ROOMS.has(roomId)) {
+        ROOMS.set(roomId, ROOMS.get(roomId).filter(id => id !== clientId));
+        console.log(`[SW] Removed inactive client ${clientId} from room ${roomId}`);
+        
+        // Update room users list for remaining clients
+        const roomUsers = [...USERS.values()]
+          .filter(user => user.roomId === roomId)
+          .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
+          
+        broadcastToRoom(roomId, 'roomUsers', roomUsers);
+      }
+      
+      // Remove user data
+      USERS.delete(clientId);
+    }
+  }
+  
+  // Clean up empty rooms
+  for (const [roomId, clients] of ROOMS.entries()) {
+    if (clients.length === 0) {
+      console.log(`[SW] Room ${roomId} is empty, removing...`);
+      ROOMS.delete(roomId);
+    }
+  }
+}, 60000); // Every 60 seconds
+
 // Process messages from clients
 self.addEventListener('message', async (event) => {
   const { type, data, roomId, userId } = event.data;
@@ -99,20 +158,33 @@ self.addEventListener('message', async (event) => {
         roomClients.push(clientId);
         ROOMS.set(roomId, roomClients);
       }
+        // Check if we already have this user (by userId) in another browser/tab in this room
+      const existingUser = [...USERS.entries()]
+        .find(([_, userData]) => 
+          userData.userId === data.user.id && 
+          userData.roomId === roomId
+        );
+        
+      if (existingUser) {
+        console.log(`[SW] User ${data.user.name} already in room ${roomId}, updating client ID from ${existingUser[0]} to ${clientId}`);
+        // Remove the old entry
+        USERS.delete(existingUser[0]);
+      }
       
       // Store user data
       USERS.set(clientId, {
         userId: data.user.id,
         name: data.user.name,
         roomId: roomId,
-        joinedAt: Date.now()
+        joinedAt: Date.now(),
+        isCreator: data.user.isRoomCreator || false
       });
       
       console.log(`[SW] User ${data.user.name} joined room ${roomId}`);
         // Notify all clients in the room about updated user list
       const roomUsers = [...USERS.values()]
         .filter(user => user.roomId === roomId)
-        .map(({ userId, name }) => ({ id: userId, name }));
+        .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
       
       console.log(`[SW] Broadcasting updated user list for room ${roomId}:`, roomUsers);
       broadcastToRoom(roomId, 'roomUsers', roomUsers);
@@ -133,8 +205,7 @@ self.addEventListener('message', async (event) => {
         roomId: roomId
       });
       break;
-      
-    case 'leaveRoom':
+        case 'leaveRoom':
       if (ROOMS.has(roomId)) {
         const updatedClients = ROOMS.get(roomId).filter(id => id !== clientId);
         
@@ -147,14 +218,34 @@ self.addEventListener('message', async (event) => {
       
       // Remove user data
       const userData = USERS.get(clientId);
+      const userId = userData?.userId;
       if (userData) {
         USERS.delete(clientId);
       }
-        // Notify remaining clients about updated user list
+      
+      // Check if the same user is still in the room from other browsers/tabs
+      const userStillInRoom = userId && [...USERS.values()]
+        .some(user => user.userId === userId && user.roomId === roomId);
+        
+      if (userStillInRoom) {
+        console.log(`[SW] User ${userId} left with client ${clientId} but still present in room ${roomId} from another client`);
+      } else if (userId) {
+        console.log(`[SW] User ${userId} completely left room ${roomId}`);
+      }
+        
+      // Notify remaining clients about updated user list
       if (ROOMS.has(roomId)) {
+        // Create a set to track unique user IDs we've already processed
+        const processedUserIds = new Set();
         const roomUsers = [...USERS.values()]
-          .filter(user => user.roomId === roomId)
-          .map(({ userId, name }) => ({ id: userId, name }));
+          .filter(user => {
+            if (user.roomId === roomId && !processedUserIds.has(user.userId)) {
+              processedUserIds.add(user.userId);
+              return true;
+            }
+            return false;
+          })
+          .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
         
         console.log(`[SW] User left room ${roomId}, broadcasting updated user list:`, roomUsers);
         broadcastToRoom(roomId, 'roomUsers', roomUsers);
@@ -232,25 +323,83 @@ self.addEventListener('message', async (event) => {
         ROOMS.delete(roomId);
       }
       break;
-        case 'ping':
+    case 'ping':
+      // Update heartbeat time for this client
+      CLIENT_HEARTBEATS.set(clientId, Date.now());
+      
       // Send pong directly to the client that sent the ping
       event.source.postMessage({
         type: 'pong',
         timestamp: Date.now()
       });
       break;
-        case 'requestRoomUsers':
+      
+    case 'heartbeat':
+      // Update heartbeat time for this client
+      CLIENT_HEARTBEATS.set(clientId, Date.now());
+      
+      // If a user ID is provided, make sure this user is correctly tracked
+      if (data && data.userId && data.roomId) {
+        // Check if this user is already registered in this room
+        const userInRoom = [...USERS.values()].some(
+          u => u.userId === data.userId && u.roomId === data.roomId
+        );
+        
+        // If not in room, this might be a reconnection or browser refresh
+        if (!userInRoom && data.rejoin) {
+          console.log(`[SW] Heartbeat detected user ${data.userId} attempting to rejoin room ${data.roomId}`);
+          
+          // Add client to room
+          if (!ROOMS.has(data.roomId)) {
+            ROOMS.set(data.roomId, []);
+          }
+          if (!ROOMS.get(data.roomId).includes(clientId)) {
+            ROOMS.set(data.roomId, [...ROOMS.get(data.roomId), clientId]);
+          }
+          
+          // Update user data
+          USERS.set(clientId, {
+            userId: data.userId,
+            name: data.name || "Unknown User",
+            roomId: data.roomId,
+            joinedAt: Date.now(),
+            isCreator: data.isCreator || false
+          });
+          
+          // Broadcast updated room users
+          const roomUsers = [...USERS.values()]
+            .filter(user => user.roomId === data.roomId)
+            .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
+          
+          broadcastToRoom(data.roomId, 'roomUsers', roomUsers);
+        }
+      }
+      break;
+    case 'requestRoomUsers':
       if (roomId) {
+        // Create a set to track unique user IDs we've already processed
+        const processedUserIds = new Set();
         const roomUsers = [...USERS.values()]
-          .filter(user => user.roomId === roomId)
-          .map(({ userId, name }) => ({ id: userId, name }));
+          .filter(user => {
+            if (user.roomId === roomId && !processedUserIds.has(user.userId)) {
+              processedUserIds.add(user.userId);
+              return true;
+            }
+            return false;
+          })
+          .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
         
         console.log(`[SW] Responding to request for room ${roomId} users:`, roomUsers);
+        
+        // Send to the requesting client
         event.source.postMessage({
           type: 'roomUsers',
           data: roomUsers,
           roomId: roomId
         });
+        
+        // Also broadcast to all clients to ensure consistency
+        broadcastToRoom(roomId, 'roomUsers', roomUsers);
       }
       break;
       
