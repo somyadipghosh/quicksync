@@ -331,13 +331,15 @@ const Room = () => {
 
           {/* Chat area */}
           <div className={`${showUserList ? 'lg:col-span-3' : 'lg:col-span-4'} flex flex-col bg-white shadow-sm rounded-lg`}>
-            {/* Messages */}
-            <div className="flex-1 p-4 overflow-y-auto h-[60vh]">              {messages.length === 0 ? (
+            {/* Messages */}            <div className="flex-1 p-4 overflow-y-auto h-[60vh]">
+              {Array.isArray(messages) && messages.length === 0 ? (
                 <div className="text-center text-gray-500 pt-10">
                   <p>No messages yet. Start the conversation!</p>
                 </div>
-              ) : (                <div className="space-y-4">                  {/* Process and render messages */}
-                  {messages
+              ) : (
+                <div className="space-y-4">
+                  {/* Process and render messages */}
+                  {Array.isArray(messages) && messages
                     .filter(msg => {
                       // Deduplicate messages by ID
                       const message = msg.data || msg;
@@ -357,8 +359,7 @@ const Room = () => {
                         <div 
                           key={message.id || index}
                           className={`flex ${message.userId === user.id ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div 
+                        >                          <div 
                             className={`max-w-[75%] rounded-lg px-4 py-2 ${
                               message.userId === user.id 
                                 ? 'bg-blue-500 text-white rounded-br-none' 
@@ -369,52 +370,56 @@ const Room = () => {
                               <div className="text-xs font-medium mb-1">
                                 {message.user}
                               </div>
-                            )}                          {message.type === 'document' ? (                            <div className="document-message">
-                              <div className="font-medium mb-1">{message.text}</div>
-                              
-                              {/* Preview for image files */}
-                              {message.document.type && message.document.type.startsWith('image/') && (
-                                <div className="mb-2">
-                                  <img 
-                                    src={message.document.data}
-                                    alt={message.document.name}
-                                    className="max-w-full rounded max-h-64 object-contain"
-                                  />
-                                </div>
-                              )}
-                              
-                              <div className="flex items-center bg-gray-50 dark:bg-gray-800 rounded p-2">
-                                <div className="mr-3 text-blue-500 text-xl">
-                                  {getFileIcon(message.document.type || '')}
-                                </div>
+                            )}
+                            
+                            {message.type === 'document' ? (
+                              <div className="document-message">
+                                <div className="font-medium mb-1">{message.text}</div>
                                 
-                                <div className="flex-1">
-                                  <div className="text-sm font-semibold truncate">{message.document.name}</div>
-                                  <div className="text-xs text-gray-500">
-                                    {message.document.type || 'Unknown type'} • {formatFileSize(message.document.size)}
+                                {/* Preview for image files */}
+                                {message.document.type && message.document.type.startsWith('image/') && (
+                                  <div className="mb-2">
+                                    <img 
+                                      src={message.document.data}
+                                      alt={message.document.name}
+                                      className="max-w-full rounded max-h-64 object-contain"
+                                    />
                                   </div>
-                                </div>
+                                )}
                                 
-                                <a 
-                                  href={message.document.data} 
-                                  download={message.document.name}
-                                  className="ml-2 bg-blue-500 hover:bg-blue-600 text-white text-xs py-1 px-2 rounded"
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  Download
-                                </a>
+                                <div className="flex items-center bg-gray-50 dark:bg-gray-800 rounded p-2">
+                                  <div className="mr-3 text-blue-500 text-xl">
+                                    {getFileIcon(message.document.type || '')}
+                                  </div>
+                                  
+                                  <div className="flex-1">
+                                    <div className="text-sm font-semibold truncate">{message.document.name}</div>
+                                    <div className="text-xs text-gray-500">
+                                      {message.document.type || 'Unknown type'} • {formatFileSize(message.document.size)}
+                                    </div>
+                                  </div>
+                                  
+                                  <a 
+                                    href={message.document.data} 
+                                    download={message.document.name}
+                                    className="ml-2 bg-blue-500 hover:bg-blue-600 text-white text-xs py-1 px-2 rounded"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    Download
+                                  </a>
+                                </div>
                               </div>
+                            ) : (
+                              <div>{message.text}</div>
+                            )}
+                            
+                            <div className="text-xs opacity-70 text-right mt-1">
+                              {new Date(message.timestamp).toLocaleTimeString()}
                             </div>
-                          ) : (
-                            <div>{message.text}</div>
-                          )}                          <div className="text-xs opacity-70 text-right mt-1">
-                            {new Date(message.timestamp).toLocaleTimeString()}
                           </div>
                         </div>
-                      </div>
-                    );
-                  })()}
+                      );                  })}
                   <div ref={messagesEndRef} />
                 </div>
               )}

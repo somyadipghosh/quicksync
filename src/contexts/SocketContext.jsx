@@ -140,31 +140,39 @@ export const SocketProvider = ({ children }) => {
       
       // Check for duplicate messages by ID if present
       setMessages(prevMessages => {
+        // Ensure prevMessages is an array
+        const currentMessages = Array.isArray(prevMessages) ? prevMessages : [];
+        
         // If this message has an ID, check if we already have it
         if (message.id) {
-          const isDuplicate = prevMessages.some(existingMsg => existingMsg.id === message.id);
+          const isDuplicate = currentMessages.some(existingMsg => {
+            const msgId = existingMsg && existingMsg.id ? existingMsg.id : undefined;
+            return msgId === message.id;
+          });
+          
           if (isDuplicate) {
             console.log('Ignoring duplicate message with ID:', message.id);
-            return prevMessages;
+            return currentMessages;
           }
         }
         
-        console.log('Current messages count:', prevMessages.length);
+        console.log('Current messages count:', currentMessages.length);
         console.log('Adding message from another user:', message.text);
-        return [...prevMessages, message];
+        return [...currentMessages, message];
       });
     });    // Handle previous messages when joining a room
     swMessenger.on('previousMessages', (messageData) => {
       // The data might be nested inside a data property
       const previousMessages = messageData.data || messageData;
       console.log('Received previous messages:', previousMessages?.length || 0);
-      if (previousMessages && previousMessages.length > 0) {
+      if (previousMessages && Array.isArray(previousMessages) && previousMessages.length > 0) {
         console.log('Setting messages to:', previousMessages);
         setMessages(previousMessages);
       } else {
         console.log('No previous messages to set');
+        setMessages([]);
       }
-    });    // Handle room users updates
+    });// Handle room users updates
     swMessenger.on('roomUsers', (userData) => {
       // Extract users from the potential nested structure
       const users = userData.data || userData;
@@ -254,17 +262,24 @@ export const SocketProvider = ({ children }) => {
         // We've already added our own documents for instant feedback
         if (doc.userId !== user?.id && !doc.isEcho) {
           setMessages(prevMessages => {
+            // Ensure prevMessages is an array
+            const currentMessages = Array.isArray(prevMessages) ? prevMessages : [];
+            
             // Check for duplicate documents by ID
             if (doc.id) {
-              const isDuplicate = prevMessages.some(existingMsg => existingMsg.id === doc.id);
+              const isDuplicate = currentMessages.some(existingMsg => {
+                const msgId = existingMsg && existingMsg.id ? existingMsg.id : undefined;
+                return msgId === doc.id;
+              });
+              
               if (isDuplicate) {
                 console.log('Ignoring duplicate document with ID:', doc.id);
-                return prevMessages;
+                return currentMessages;
               }
             }
             
             console.log('Document from another user added to messages:', documentMessage);
-            return [...prevMessages, documentMessage];
+            return [...currentMessages, documentMessage];
           });
         } else {
           console.log('Ignoring document from self or echo (already displayed)');
@@ -285,8 +300,10 @@ export const SocketProvider = ({ children }) => {
         console.error('Invalid user object when joining room:', user);
         return;
       }
-        // Clear current participants list when joining a new room
+        
+      // Clear current participants list and messages when joining a new room
       setRoomUsers([]);
+      setMessages([]);
       
       // Track join success status
       let joinSuccessful = false;
@@ -378,7 +395,6 @@ export const SocketProvider = ({ children }) => {
   const generateUniqueId = (prefix = 'msg') => {
     return `${prefix}_${user?.id || 'unknown'}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   };
-
   // Message sending function
   const sendMessage = (text) => {
     if (swRegistered.current && user && room) {
@@ -396,7 +412,11 @@ export const SocketProvider = ({ children }) => {
       console.log('Sending message:', messageData);
       
       // Immediately add to local messages for instant feedback
-      setMessages(prevMessages => [...prevMessages, messageData]);
+      setMessages(prevMessages => {
+        // Ensure prevMessages is an array
+        const currentMessages = Array.isArray(prevMessages) ? prevMessages : [];
+        return [...currentMessages, messageData];
+      });
       
       swMessenger.sendMessage('message', messageData, room)
         .then(() => {
@@ -440,7 +460,11 @@ export const SocketProvider = ({ children }) => {
       console.log('Sending document to room:', room);
       
       // Immediately add to local messages for instant feedback
-      setMessages(prevMessages => [...prevMessages, documentData]);
+      setMessages(prevMessages => {
+        // Ensure prevMessages is an array
+        const currentMessages = Array.isArray(prevMessages) ? prevMessages : [];
+        return [...currentMessages, documentData];
+      });
       
       swMessenger.sendMessage('shareDocument', documentData, room)
         .then(() => {
