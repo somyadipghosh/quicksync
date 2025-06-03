@@ -5,6 +5,11 @@ const ROOMS = new Map();    // Store room data
 const USERS = new Map();    // Store connected users by client ID
 let messageCounter = 0;     // To ensure unique message IDs
 
+// Helper function to generate unique IDs for messages and documents
+const generateUniqueId = (prefix = 'msg', userId = null) => {
+  return `${prefix}_${userId || 'system'}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+};
+
 // Install event - cache static resources
 self.addEventListener('install', (event) => {
   console.log('[Service Worker] Installing Service Worker', new Date().toISOString());
@@ -50,15 +55,17 @@ self.addEventListener('activate', (event) => {
 });
 
 // Helper function to broadcast a message to all clients in a room
-const broadcastToRoom = async (roomId, eventName, data) => {
+// excludeClientId parameter allows us to skip sending to the originating client
+const broadcastToRoom = async (roomId, eventName, data, excludeClientId = null) => {
   const roomClients = ROOMS.get(roomId) || [];
   const clients = await self.clients.matchAll();
   
-  console.log(`[SW] Broadcasting ${eventName} to room ${roomId}, clients: ${roomClients.length}`);
+  console.log(`[SW] Broadcasting ${eventName} to room ${roomId}, clients: ${roomClients.length}, excluding: ${excludeClientId || 'none'}`);
   
   let broadcastCount = 0;
   clients.forEach(client => {
-    if (roomClients.includes(client.id)) {
+    // Skip if this is the excluded client (typically the message sender)
+    if (roomClients.includes(client.id) && client.id !== excludeClientId) {
       const message = {
         type: eventName,
         data: data,
@@ -252,11 +259,11 @@ self.addEventListener('message', async (event) => {
       } else {
         console.log(`[SW] Last user left room ${roomId}, room has been removed`);
       }
-      break;
-    case 'message':
-      // Add timestamp if not provided
+      break;    case 'message':
+      // Add timestamp if not provided and ensure ID exists
       const message = {
         ...data,
+        id: data.id || generateUniqueId('msg', data.userId),
         timestamp: data.timestamp || new Date().toISOString()
       };
       
@@ -280,18 +287,19 @@ self.addEventListener('message', async (event) => {
       }
       ROOM_MESSAGES.set(roomId, roomMessages);
       
-      console.log(`[SW] Storing message in room ${roomId}, total: ${roomMessages.length}`);
-        // Broadcast message to all clients in the room
-      broadcastToRoom(roomId, 'message', message);
+      console.log(`[SW] Storing message in room ${roomId}, total: ${roomMessages.length}`);      // Broadcast message to all clients in the room EXCEPT the sender
+      // This prevents the sender from receiving their own message twice
+      broadcastToRoom(roomId, 'message', message, clientId);
       
       // For debugging, also send directly to the sender to confirm receipt
+      // but with a special flag indicating it's their own message being echoed back
       event.source.postMessage({
         type: 'message',
-        data: message,
+        data: { ...message, isEcho: true },
         roomId: roomId,
         messageId: `msg_${Date.now()}_${messageCounter++}`
       });
-      break;        case 'shareDocument':
+      break;    case 'shareDocument':
       console.log(`[SW] Document share request received for room ${roomId}`, { 
         docName: data.document?.name, 
         docType: data.document?.type,
@@ -301,8 +309,10 @@ self.addEventListener('message', async (event) => {
       
       try {
         // Make sure the document has the required type field for proper rendering
+        // and ensure it has a unique ID
         const documentMessage = {
           ...data,
+          id: data.id || generateUniqueId('doc', data.userId),
           type: 'document',
           timestamp: data.timestamp || new Date().toISOString()
         };
@@ -318,9 +328,17 @@ self.addEventListener('message', async (event) => {
           roomMessages.shift(); // Remove oldest message if more than 100
         }
         ROOM_MESSAGES.set(roomId, roomMessages);
+          // Broadcast to all clients in room except the sender
+        broadcastToRoom(roomId, 'documentShared', documentMessage, clientId);
         
-        // Broadcast to all clients in room
-        broadcastToRoom(roomId, 'documentShared', documentMessage);
+        // Also send back to the sender with an isEcho flag
+        event.source.postMessage({
+          type: 'documentShared',
+          data: { ...documentMessage, isEcho: true },
+          roomId: roomId,
+          messageId: `doc_${Date.now()}_${messageCounter++}`
+        });
+        
         console.log(`[SW] Document shared successfully to room ${roomId}`);
       } catch (error) {
         console.error(`[SW] Error sharing document to room ${roomId}:`, error);

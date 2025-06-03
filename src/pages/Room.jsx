@@ -332,21 +332,37 @@ const Room = () => {
           {/* Chat area */}
           <div className={`${showUserList ? 'lg:col-span-3' : 'lg:col-span-4'} flex flex-col bg-white shadow-sm rounded-lg`}>
             {/* Messages */}
-            <div className="flex-1 p-4 overflow-y-auto h-[60vh]">
-              {messages.length === 0 ? (
+            <div className="flex-1 p-4 overflow-y-auto h-[60vh]">              {messages.length === 0 ? (
                 <div className="text-center text-gray-500 pt-10">
                   <p>No messages yet. Start the conversation!</p>
                 </div>
               ) : (                <div className="space-y-4">
-                  {messages.map((msg, index) => {
-                    console.log('Rendering message:', msg);
-                    // Extract the message properly, handling potential nesting
-                    const message = msg.data || msg;
-                    return (
-                      <div 
-                        key={index}
-                        className={`flex ${message.userId === user.id ? 'justify-end' : 'justify-start'}`}
-                      >
+                  {/* Use a Set to keep track of message IDs we've already seen */}
+                  {(() => {
+                    const seenIds = new Set();
+                    return messages
+                      // Filter out duplicates based on message ID if it exists
+                      .filter(msg => {
+                        const message = msg.data || msg;
+                        if (!message.id) return true; // Keep messages without IDs
+                        
+                        if (seenIds.has(message.id)) {
+                          console.log('Skipping duplicate message ID:', message.id);
+                          return false; // Skip duplicates
+                        }
+                        
+                        seenIds.add(message.id);
+                        return true;
+                      })
+                      .map((msg, index) => {
+                        console.log('Rendering message:', msg);
+                        // Extract the message properly, handling potential nesting
+                        const message = msg.data || msg;
+                        return (
+                          <div 
+                            key={message.id || index}
+                            className={`flex ${message.userId === user.id ? 'justify-end' : 'justify-start'}`}
+                          >
                         <div 
                           className={`max-w-[75%] rounded-lg px-4 py-2 ${
                             message.userId === user.id 

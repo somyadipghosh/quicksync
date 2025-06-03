@@ -124,18 +124,33 @@ export const SocketProvider = ({ children }) => {
         }
       }
     }, reconnectDelay);
-  };
-  // Set up message handlers for the service worker
+  };  // Set up message handlers for the service worker
   const setupMessageHandlers = () => {    // Handle incoming messages
     swMessenger.on('message', (messageData) => {
       console.log('Received new message to display:', messageData);
       // Check if the message is nested in a data property as the service worker wraps it
       const message = messageData.data || messageData;
       
-      // Add directly to local UI state
+      // Don't add if it's a message from ourselves (we've already added it for instant feedback)
+      // Also check for the isEcho flag that indicates this is our message being echoed back
+      if (message.userId === user?.id || message.isEcho === true) {
+        console.log('Ignoring message from self or echo (already displayed):', message.text);
+        return;
+      }
+      
+      // Check for duplicate messages by ID if present
       setMessages(prevMessages => {
+        // If this message has an ID, check if we already have it
+        if (message.id) {
+          const isDuplicate = prevMessages.some(existingMsg => existingMsg.id === message.id);
+          if (isDuplicate) {
+            console.log('Ignoring duplicate message with ID:', message.id);
+            return prevMessages;
+          }
+        }
+        
         console.log('Current messages count:', prevMessages.length);
-        console.log('Adding message with content:', message.text);
+        console.log('Adding message from another user:', message.text);
         return [...prevMessages, message];
       });
     });    // Handle previous messages when joining a room
@@ -217,23 +232,44 @@ export const SocketProvider = ({ children }) => {
         const fileName = doc.document.name || 'a file';
         const fileType = doc.document.type || 'unknown type';
         
-        // Alert user about the shared document
-        alert(`${sender} shared ${fileName} (${fileType})`);
+        // Don't show alert for our own documents (we already know we shared it)
+        // Also check for isEcho flag
+        if (doc.userId !== user?.id && !doc.isEcho) {
+          // Alert user about the shared document from others
+          alert(`${sender} shared ${fileName} (${fileType})`);
+        }
         
-        // Create a message object for the document so it appears in the chat
+        // Create a message object for the document
         const documentMessage = {
+          id: doc.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
           userId: doc.userId,
           user: doc.user,
-          type: 'document', // This is critical for rendering properly
+          type: 'document',
           text: `Shared a file: ${fileName}`,
           document: doc.document,
           timestamp: doc.timestamp || new Date().toISOString()
         };
         
-        // Add the document message to the chat
-        setMessages(prevMessages => [...prevMessages, documentMessage]);
+        // Only add to chat if it's from another user (not self)
+        // We've already added our own documents for instant feedback
+        if (doc.userId !== user?.id && !doc.isEcho) {
+          setMessages(prevMessages => {
+            // Check for duplicate documents by ID
+            if (doc.id) {
+              const isDuplicate = prevMessages.some(existingMsg => existingMsg.id === doc.id);
+              if (isDuplicate) {
+                console.log('Ignoring duplicate document with ID:', doc.id);
+                return prevMessages;
+              }
+            }
+            
+            console.log('Document from another user added to messages:', documentMessage);
+            return [...prevMessages, documentMessage];
+          });
+        } else {
+          console.log('Ignoring document from self or echo (already displayed)');
+        }
         
-        console.log('Document added to messages:', documentMessage);
         console.log('Document data available at:', doc.document.data);
       } else {
         console.error('Invalid document data received:', documentData);
@@ -338,11 +374,19 @@ export const SocketProvider = ({ children }) => {
         }
       };
     }
-  }, [user, room]);
+  }, [user, room]);  // Helper function to generate unique IDs
+  const generateUniqueId = (prefix = 'msg') => {
+    return `${prefix}_${user?.id || 'unknown'}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  };
+
   // Message sending function
   const sendMessage = (text) => {
     if (swRegistered.current && user && room) {
+      // Create a unique message ID to help with deduplication
+      const messageId = generateUniqueId('msg');
+      
       const messageData = {
+        id: messageId, // Add unique ID to each message
         user: user.name,
         userId: user.id,
         text,
@@ -379,8 +423,12 @@ export const SocketProvider = ({ children }) => {
     console.log('shareDocument called with:', document?.name);
     
     if (swRegistered.current && user && room) {
+      // Create a unique document ID to help with deduplication
+      const docId = generateUniqueId('doc');
+      
       // Create a document message with the type field for proper rendering
       const documentData = {
+        id: docId, // Add unique ID to each document message
         user: user.name,
         userId: user.id,
         type: 'document', // This is critical for rendering correctly
