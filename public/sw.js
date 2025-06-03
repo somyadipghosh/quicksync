@@ -411,32 +411,35 @@ self.addEventListener('message', async (event) => {
           broadcastToRoom(data.roomId, 'roomUsers', roomUsers);
         }
       }
-      break;
-    case 'requestRoomUsers':
-      if (roomId) {
+      break;    case 'requestRoomUsers':
+      if (data.roomId) {
         // Create a set to track unique user IDs we've already processed
         const processedUserIds = new Set();
         const roomUsers = [...USERS.values()]
           .filter(user => {
-            if (user.roomId === roomId && !processedUserIds.has(user.userId)) {
+            if (user.roomId === data.roomId && !processedUserIds.has(user.userId)) {
               processedUserIds.add(user.userId);
               return true;
             }
             return false;
           })
-          .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
+          .map(({ userId, name, isCreator }) => ({ 
+            id: userId, 
+            name, 
+            isCreator: isCreator === undefined ? false : isCreator // Handle undefined isCreator
+          }));
         
-        console.log(`[SW] Responding to request for room ${roomId} users:`, roomUsers);
+        console.log(`[SW] Responding to request for room ${data.roomId} users:`, roomUsers);
         
         // Send to the requesting client
         event.source.postMessage({
           type: 'roomUsers',
           data: roomUsers,
-          roomId: roomId
+          roomId: data.roomId
         });
         
         // Also broadcast to all clients to ensure consistency
-        broadcastToRoom(roomId, 'roomUsers', roomUsers);
+        broadcastToRoom(data.roomId, 'roomUsers', roomUsers);
       }
       break;
       

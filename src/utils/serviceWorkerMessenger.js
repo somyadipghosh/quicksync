@@ -84,18 +84,37 @@ class ServiceWorkerMessenger {
       });
       this._messageQueue = [];
     }
-  }
-  // Handle incoming messages from the Service Worker
+  }  // Handle incoming messages from the Service Worker
   _onMessage(event) {
-    const { type, data } = event.data;
-    
-    console.log(`[SWMessenger] Received message of type: ${type}`);
-    
-    if (this._messageHandlers.has(type)) {
-      const handlers = this._messageHandlers.get(type);
-      handlers.forEach(handler => handler(data));
-    } else {
-      console.warn(`[SWMessenger] No handler for message type: ${type}`);
+    try {
+      if (!event || !event.data) {
+        console.warn('[SWMessenger] Received empty or invalid message event');
+        return;
+      }
+      
+      const { type, data } = event.data;
+      
+      if (!type) {
+        console.warn('[SWMessenger] Received message with no type');
+        return;
+      }
+      
+      console.log(`[SWMessenger] Received message of type: ${type}`);
+      
+      if (this._messageHandlers.has(type)) {
+        const handlers = this._messageHandlers.get(type);
+        handlers.forEach(handler => {
+          try {
+            handler(data);
+          } catch (handlerError) {
+            console.error(`[SWMessenger] Error in handler for ${type}:`, handlerError);
+          }
+        });
+      } else {
+        console.warn(`[SWMessenger] No handler for message type: ${type}`);
+      }
+    } catch (error) {
+      console.error('[SWMessenger] Error processing message:', error);
     }
   }
 
@@ -125,8 +144,7 @@ class ServiceWorkerMessenger {
     }
     
     return this;
-  }
-  // Send a message to the Service Worker
+  }  // Send a message to the Service Worker
   sendMessage(type, data = {}, roomId = null) {
     if (!this._isRegistered || !this._sw) {
       console.warn(`[SWMessenger] Tried to send message of type ${type} before SW is ready`);
@@ -136,9 +154,28 @@ class ServiceWorkerMessenger {
     }
     
     try {
+      // Make sure we have a valid controller
+      if (!navigator.serviceWorker.controller) {
+        console.warn('[SWMessenger] ServiceWorker controller is missing, attempting to recover');
+        
+        // Try to re-establish connection
+        if (this._sw) {
+          // Use the SW instance we already have
+        } else if (navigator.serviceWorker.ready) {
+          navigator.serviceWorker.ready.then(registration => {
+            this._sw = registration.active;
+            // Queue this message for retry
+            this._messageQueue.push({ type, data, roomId });
+          });
+        }
+        
+        return Promise.reject(new Error('ServiceWorker controller not available'));
+      }
+      
+      // Construct the message
       const message = {
         type,
-        data,
+        data: data || {}, // Ensure data is at least an empty object
         roomId,
         clientId: this._clientId,
         timestamp: Date.now()

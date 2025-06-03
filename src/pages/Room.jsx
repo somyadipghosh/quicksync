@@ -203,16 +203,23 @@ const Room = () => {
                   onClick={() => setShowUserList(!showUserList)}
                 >
                   Participants ({Array.isArray(roomUsers) && roomUsers.length > 0 ? roomUsers.length : 1})
-                </Button>
-                <Button
+                </Button>                <Button
                   variant="secondary"
                   onClick={() => {
                     console.log('Manually refreshing participants');
-                    if (isConnected && room) {
-                      navigator.serviceWorker.controller?.postMessage({
-                        type: 'requestRoomUsers',
-                        roomId: room
-                      });
+                    if (isConnected) {
+                      try {
+                        if (!navigator.serviceWorker.controller) {
+                          console.error('Service worker controller not available');
+                          return;
+                        }
+                        navigator.serviceWorker.controller.postMessage({
+                          type: 'requestRoomUsers',
+                          roomId: roomId // Use roomId from useParams instead of room object
+                        });
+                      } catch (error) {
+                        console.error('Error requesting room users:', error);
+                      }
                     }
                   }}
                   title="Refresh participants list"
@@ -306,18 +313,21 @@ const Room = () => {
                   </li>
                 )}
                 
-                {/* Add refresh button to manually refresh participant list */}
-                <li className="mt-2 py-2">
+                {/* Add refresh button to manually refresh participant list */}                <li className="mt-2 py-2">
                   <button 
                     onClick={() => {
                       if (isConnected) {
                         // Request room users update
                         console.log('Manually requesting room users update');
                         // Access the SocketContext functions directly
-                        navigator.serviceWorker.controller?.postMessage({
-                          type: 'requestRoomUsers',
-                          roomId
-                        });
+                        try {
+                          navigator.serviceWorker.controller?.postMessage({
+                            type: 'requestRoomUsers',
+                            roomId: roomId
+                          });
+                        } catch (error) {
+                          console.error('Error requesting room users:', error);
+                        }
                       }
                     }}
                     className="text-xs text-blue-500 hover:text-blue-700"

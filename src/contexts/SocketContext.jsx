@@ -6,12 +6,11 @@ const SocketContext = createContext();
 
 export const useSocketContext = () => useContext(SocketContext);
 
-export const SocketProvider = ({ children }) => {
-  const [isConnected, setIsConnected] = useState(false);
+export const SocketProvider = ({ children }) => {  const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
   const [messages, setMessages] = useState([]);
   const [roomUsers, setRoomUsers] = useState([]);
-  const { user, room } = useUserContext();
+  const { user, room, isRoomCreator } = useUserContext();
   const pingIntervalRef = useRef(null);
   const swRegistered = useRef(false);
   const heartbeatIntervalRef = useRef(null);
@@ -42,14 +41,13 @@ export const SocketProvider = ({ children }) => {
               handleReconnect();
             });
           
-          // Also send more detailed heartbeat with user info if in a room
-          // This helps recover from page refreshes and reconnections
+          // Also send more detailed heartbeat with user info if in a room          // This helps recover from page refreshes and reconnections
           if (user && room) {
             swMessenger.sendMessage('heartbeat', {
               userId: user.id,
               name: user.name,
               roomId: room,
-              isCreator: isRoomCreator,
+              isCreator: isRoomCreator || false, // Default to false if undefined
               rejoin: true
             }).catch(err => console.error('Detailed heartbeat failed:', err));
           }
@@ -172,45 +170,63 @@ export const SocketProvider = ({ children }) => {
         console.log('No previous messages to set');
         setMessages([]);
       }
-    });// Handle room users updates
+    });    // Handle room users updates
     swMessenger.on('roomUsers', (userData) => {
-      // Extract users from the potential nested structure
-      const users = userData.data || userData;
-      console.log('Room users updated, data received:', userData);
-      console.log('Room users extracted:', users);
-      console.log('Room users count:', users?.length || 0);
-      
-      // Ensure we have a valid array
-      if (users && Array.isArray(users)) {
-        // Ensure the current user is always in the list
-        setRoomUsers(prevUsers => {
-          // Create a map of all existing users by ID for quick lookup
-          const updatedUsers = [...users];
-          const userIds = new Set(updatedUsers.map(u => u.id));
-          
-          // If current user isn't in the list, add them
-          if (user && user.id && !userIds.has(user.id)) {
-            console.log('Current user not found in roomUsers, adding them');
-            updatedUsers.push({
+      try {
+        // Extract users from the potential nested structure
+        const users = userData?.data || userData;
+        console.log('Room users updated, data received:', userData);
+        console.log('Room users extracted:', users);
+        console.log('Room users count:', users?.length || 0);
+        
+        // Ensure we have a valid array
+        if (users && Array.isArray(users)) {
+          // Ensure the current user is always in the list
+          setRoomUsers(prevUsers => {
+            try {
+              // Create a map of all existing users by ID for quick lookup
+              const updatedUsers = [...users];
+              const userIds = new Set(updatedUsers.map(u => u?.id).filter(Boolean));
+              
+              // If current user isn't in the list, add them
+              if (user && user.id && !userIds.has(user.id)) {
+                console.log('Current user not found in roomUsers, adding them');
+                updatedUsers.push({
+                  id: user.id,
+                  name: user.name,
+                  isCreator: isRoomCreator || false // Default to false if undefined
+                });
+              }
+              
+              return updatedUsers;
+            } catch (error) {
+              console.error('Error processing room users:', error);
+              // Return previous state in case of error
+              return prevUsers;
+            }
+          });
+        } else {
+          console.error('Invalid room users data received:', userData);
+          // Even with invalid data, make sure current user is in list
+          if (user) {
+            setRoomUsers([{
               id: user.id,
               name: user.name,
-              isCreator: isRoomCreator
-            });
+              isCreator: isRoomCreator || false // Default to false if undefined
+            }]);
+          } else {
+            setRoomUsers([]);
           }
-          
-          return updatedUsers;
-        });
-      } else {
-        console.error('Invalid room users data received:', userData);
-        // Even with invalid data, make sure current user is in list
+        }
+      } catch (error) {
+        console.error('Exception in room users handler:', error);
+        // Make sure current user is in list
         if (user) {
           setRoomUsers([{
             id: user.id,
             name: user.name,
-            isCreator: isRoomCreator
+            isCreator: isRoomCreator || false // Default to false if undefined
           }]);
-        } else {
-          setRoomUsers([]);
         }
       }
     });
@@ -314,11 +330,10 @@ export const SocketProvider = ({ children }) => {
         setRoomUsers(prev => {
           const userExists = prev.some(u => u.id === user.id);
           if (!userExists) {
-            console.log('Adding self to roomUsers as not found in current list');
-            return [...prev, { 
+            console.log('Adding self to roomUsers as not found in current list');            return [...prev, { 
               id: user.id, 
               name: user.name, 
-              isCreator: isRoomCreator 
+              isCreator: isRoomCreator || false // Default to false if undefined
             }];
           }
           return prev;
@@ -326,9 +341,8 @@ export const SocketProvider = ({ children }) => {
       };
 
       // Give the service worker a moment to be fully active
-      setTimeout(() => {
-        // Include isRoomCreator flag in the user object
-        const enhancedUser = { ...user, isRoomCreator };
+      setTimeout(() => {        // Include isRoomCreator flag in the user object
+        const enhancedUser = { ...user, isRoomCreator: isRoomCreator || false };
         
         console.log('Joining room with user data:', enhancedUser);
         
@@ -336,13 +350,18 @@ export const SocketProvider = ({ children }) => {
           .then(() => {
             joinSuccessful = true;
             console.log('Joined room successfully, waiting for room users update');
-            
-            // Request room users immediately
-            swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
-              .catch(err => console.error('Error requesting room users:', err));
-            
-            // Add ourselves as fallback
-            ensureSelfInRoomUsers();
+              // Request room users immediately
+            try {
+              swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
+                .catch(err => console.error('Error requesting room users:', err));
+              
+              // Add ourselves as fallback
+              ensureSelfInRoomUsers();
+            } catch (error) {
+              console.error('Exception requesting room users:', error);
+              // Still ensure we see ourselves
+              ensureSelfInRoomUsers();
+            }
           })
           .catch(err => {
             console.error('Error joining room:', err);
@@ -362,16 +381,19 @@ export const SocketProvider = ({ children }) => {
             }, 500);
           });
       }, 100);
-      
-      // Periodically check & request room users to ensure the list stays updated
+        // Periodically check & request room users to ensure the list stays updated
       const roomUsersInterval = setInterval(() => {
-        if (joinSuccessful) {
+        if (joinSuccessful && room) {
           console.log('Periodic room users refresh');
-          swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
-            .catch(err => console.error('Error in periodic room users request:', err));
-          
-          // Make sure we're still in the list
-          ensureSelfInRoomUsers();
+          try {
+            swMessenger.sendMessage('requestRoomUsers', { roomId: room }, room)
+              .catch(err => console.error('Error in periodic room users request:', err));
+            
+            // Make sure we're still in the list
+            ensureSelfInRoomUsers();
+          } catch (error) {
+            console.error('Exception in periodic room users refresh:', error);
+          }
         }
       }, 10000); // Every 10 seconds
       
