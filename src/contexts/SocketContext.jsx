@@ -205,8 +205,7 @@ export const SocketProvider = ({ children }) => {
         setIsConnected(true);
         setConnectionError(null);
       }
-    });
-      // Handle document shared event
+    });    // Handle document shared event
     swMessenger.on('documentShared', (documentData) => {
       // Extract data from the potential nested structure
       const doc = documentData.data || documentData;
@@ -218,13 +217,23 @@ export const SocketProvider = ({ children }) => {
         const fileName = doc.document.name || 'a file';
         const fileType = doc.document.type || 'unknown type';
         
+        // Alert user about the shared document
         alert(`${sender} shared ${fileName} (${fileType})`);
         
-        // Here you could implement additional functionality:
-        // 1. Add the document to a shared documents list
-        // 2. Offer a download option
-        // 3. Display the content if it's viewable (like images, pdf, etc)
+        // Create a message object for the document so it appears in the chat
+        const documentMessage = {
+          userId: doc.userId,
+          user: doc.user,
+          type: 'document', // This is critical for rendering properly
+          text: `Shared a file: ${fileName}`,
+          document: doc.document,
+          timestamp: doc.timestamp || new Date().toISOString()
+        };
         
+        // Add the document message to the chat
+        setMessages(prevMessages => [...prevMessages, documentMessage]);
+        
+        console.log('Document added to messages:', documentMessage);
         console.log('Document data available at:', doc.document.data);
       } else {
         console.error('Invalid document data received:', documentData);
@@ -365,20 +374,25 @@ export const SocketProvider = ({ children }) => {
       if (!user) console.error('User not defined');
       if (!room) console.error('Room not defined');
     }
-  };
-  // Document sharing function
+  };  // Document sharing function
   const shareDocument = (document) => {
     console.log('shareDocument called with:', document?.name);
     
     if (swRegistered.current && user && room) {
+      // Create a document message with the type field for proper rendering
       const documentData = {
         user: user.name,
         userId: user.id,
+        type: 'document', // This is critical for rendering correctly
+        text: `Shared a file: ${document.name}`,
         document,
         timestamp: new Date().toISOString(),
       };
       
       console.log('Sending document to room:', room);
+      
+      // Immediately add to local messages for instant feedback
+      setMessages(prevMessages => [...prevMessages, documentData]);
       
       swMessenger.sendMessage('shareDocument', documentData, room)
         .then(() => {

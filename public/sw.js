@@ -291,8 +291,7 @@ self.addEventListener('message', async (event) => {
         roomId: roomId,
         messageId: `msg_${Date.now()}_${messageCounter++}`
       });
-      break;
-        case 'shareDocument':
+      break;        case 'shareDocument':
       console.log(`[SW] Document share request received for room ${roomId}`, { 
         docName: data.document?.name, 
         docType: data.document?.type,
@@ -301,7 +300,27 @@ self.addEventListener('message', async (event) => {
       });
       
       try {
-        broadcastToRoom(roomId, 'documentShared', data);
+        // Make sure the document has the required type field for proper rendering
+        const documentMessage = {
+          ...data,
+          type: 'document',
+          timestamp: data.timestamp || new Date().toISOString()
+        };
+        
+        // Store document in room message history like regular messages
+        if (!ROOM_MESSAGES.has(roomId)) {
+          ROOM_MESSAGES.set(roomId, []);
+        }
+        
+        const roomMessages = ROOM_MESSAGES.get(roomId);
+        roomMessages.push(documentMessage);
+        if (roomMessages.length > 100) {
+          roomMessages.shift(); // Remove oldest message if more than 100
+        }
+        ROOM_MESSAGES.set(roomId, roomMessages);
+        
+        // Broadcast to all clients in room
+        broadcastToRoom(roomId, 'documentShared', documentMessage);
         console.log(`[SW] Document shared successfully to room ${roomId}`);
       } catch (error) {
         console.error(`[SW] Error sharing document to room ${roomId}:`, error);

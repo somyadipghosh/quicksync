@@ -16,6 +16,26 @@ const Room = () => {
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
   
+  // Helper function to format file size
+  const formatFileSize = (sizeInBytes) => {
+    if (sizeInBytes < 1024) return `${sizeInBytes} B`;
+    if (sizeInBytes < 1024 * 1024) return `${Math.round(sizeInBytes / 1024)} KB`;
+    return `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+  
+  // Helper function to get file type icon class
+  const getFileIcon = (fileType) => {
+    if (fileType.startsWith('image/')) return '📷';
+    if (fileType.startsWith('video/')) return '🎥';
+    if (fileType.startsWith('audio/')) return '🎵';
+    if (fileType.includes('pdf')) return '📄';
+    if (fileType.includes('doc') || fileType.includes('word')) return '📝';
+    if (fileType.includes('xls') || fileType.includes('sheet')) return '📊';
+    if (fileType.includes('ppt') || fileType.includes('presentation')) return '📊';
+    if (fileType.includes('zip') || fileType.includes('compressed')) return '🗜️';
+    return '📁';
+  };
+  
   // Room invitation link
   const inviteLink = `${window.location.origin}/room/${roomId}`;
   
@@ -76,17 +96,32 @@ const Room = () => {
       // This prevents duplicate messages
       handleSendMessage(e);
     }
-  };
-  const handleFileUpload = (e) => {
+  };  const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !isConnected) return;
+    
+    // Validate file size (limit to 5MB to be safe)
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+    if (file.size > MAX_SIZE) {
+      alert(`File size (${formatFileSize(file.size)}) exceeds the maximum allowed (${formatFileSize(MAX_SIZE)})`);
+      return;
+    }
     
     console.log('File selected:', file.name, file.type, file.size);
     
     try {
+      // Show loading state
+      const loadingMessage = `Uploading ${file.name}...`;
+      setMessageInput(loadingMessage);
+      
       const fileReader = new FileReader();
+      
       fileReader.onload = () => {
         console.log('File loaded successfully, sharing document...');
+        // Clear loading message
+        setMessageInput('');
+        
+        // Share the document with all required metadata
         shareDocument({
           name: file.name,
           type: file.type,
@@ -94,13 +129,18 @@ const Room = () => {
           data: fileReader.result,
         });
       };
+      
       fileReader.onerror = (error) => {
         console.error('Error reading file:', error);
+        setMessageInput('');
         alert('Failed to read the selected file. Please try again.');
       };
+      
+      // Start reading the file
       fileReader.readAsDataURL(file);
     } catch (error) {
       console.error('Exception while handling file upload:', error);
+      setMessageInput('');
       alert('Something went wrong while processing the file. Please try again.');
     }
   };
@@ -318,17 +358,42 @@ const Room = () => {
                             <div className="text-xs font-medium mb-1">
                               {message.user}
                             </div>
-                          )}
-                          {message.type === 'document' ? (
-                            <div>
-                              <div className="font-medium">{message.text}</div>
-                              <a 
-                                href={message.document.data} 
-                                download={message.document.name}
-                                className="text-sm underline"
-                              >
-                                Download ({Math.round(message.document.size / 1024)} KB)
-                              </a>
+                          )}                          {message.type === 'document' ? (                            <div className="document-message">
+                              <div className="font-medium mb-1">{message.text}</div>
+                              
+                              {/* Preview for image files */}
+                              {message.document.type && message.document.type.startsWith('image/') && (
+                                <div className="mb-2">
+                                  <img 
+                                    src={message.document.data}
+                                    alt={message.document.name}
+                                    className="max-w-full rounded max-h-64 object-contain"
+                                  />
+                                </div>
+                              )}
+                              
+                              <div className="flex items-center bg-gray-50 dark:bg-gray-800 rounded p-2">
+                                <div className="mr-3 text-blue-500 text-xl">
+                                  {getFileIcon(message.document.type || '')}
+                                </div>
+                                
+                                <div className="flex-1">
+                                  <div className="text-sm font-semibold truncate">{message.document.name}</div>
+                                  <div className="text-xs text-gray-500">
+                                    {message.document.type || 'Unknown type'} • {formatFileSize(message.document.size)}
+                                  </div>
+                                </div>
+                                
+                                <a 
+                                  href={message.document.data} 
+                                  download={message.document.name}
+                                  className="ml-2 bg-blue-500 hover:bg-blue-600 text-white text-xs py-1 px-2 rounded"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  Download
+                                </a>
+                              </div>
                             </div>
                           ) : (
                             <div>{message.text}</div>
