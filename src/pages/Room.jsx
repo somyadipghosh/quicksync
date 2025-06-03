@@ -39,12 +39,13 @@ const Room = () => {
     if (isConnected && reconnecting) {
       setReconnecting(false);
     }
-  }, [isConnected, connectionError, reconnecting]);
-  // Scroll to bottom of messages and debug message array
+  }, [isConnected, connectionError, reconnecting]);  // Scroll to bottom of messages and debug message array
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     console.log('Current messages array:', messages);
   }, [messages]);
+  
+  // Single function to handle message sending
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (messageInput.trim() && isConnected) {
@@ -54,31 +55,42 @@ const Room = () => {
     }
   };
   
+  // Handle Enter key press but ensure it doesn't get triggered multiple times
   const handleKeyDown = (e) => {
+    // Only handle Enter key when not submitting the form
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if (messageInput.trim() && isConnected) {
-        sendMessage(messageInput.trim());
-        setMessageInput('');
-        console.log('Message sent via Enter key:', messageInput.trim());
-      }
+      // Don't call sendMessage directly, call the form submit handler
+      // This prevents duplicate messages
+      handleSendMessage(e);
     }
   };
-
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !isConnected) return;
-
-    const fileReader = new FileReader();
-    fileReader.onload = () => {
-      shareDocument({
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        data: fileReader.result,
-      });
-    };
-    fileReader.readAsDataURL(file);
+    
+    console.log('File selected:', file.name, file.type, file.size);
+    
+    try {
+      const fileReader = new FileReader();
+      fileReader.onload = () => {
+        console.log('File loaded successfully, sharing document...');
+        shareDocument({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: fileReader.result,
+        });
+      };
+      fileReader.onerror = (error) => {
+        console.error('Error reading file:', error);
+        alert('Failed to read the selected file. Please try again.');
+      };
+      fileReader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Exception while handling file upload:', error);
+      alert('Something went wrong while processing the file. Please try again.');
+    }
   };
 
   const handleEndRoom = () => {
@@ -292,12 +304,20 @@ const Room = () => {
                   placeholder="Type a message..."
                   disabled={!isConnected}
                 />
-                
-                <div className="relative">
+                  <div className="relative">
                   <Button 
                     type="button" 
                     variant="secondary"
-                    onClick={() => document.getElementById('file-upload').click()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const fileInput = document.getElementById('file-upload');
+                      if (fileInput) {
+                        fileInput.value = ''; // Clear previous selection
+                        fileInput.click();
+                      } else {
+                        console.error('File input element not found');
+                      }
+                    }}
                     disabled={!isConnected}
                   >
                     Attach
@@ -307,6 +327,7 @@ const Room = () => {
                     type="file"
                     onChange={handleFileUpload}
                     className="hidden"
+                    accept="*/*" // Accept all file types
                     disabled={!isConnected}
                   />
                 </div>

@@ -201,9 +201,20 @@ self.addEventListener('message', async (event) => {
         messageId: `msg_${Date.now()}_${messageCounter++}`
       });
       break;
+        case 'shareDocument':
+      console.log(`[SW] Document share request received for room ${roomId}`, { 
+        docName: data.document?.name, 
+        docType: data.document?.type,
+        docSize: data.document?.size,
+        fromUser: data.user
+      });
       
-    case 'shareDocument':
-      broadcastToRoom(roomId, 'documentShared', data);
+      try {
+        broadcastToRoom(roomId, 'documentShared', data);
+        console.log(`[SW] Document shared successfully to room ${roomId}`);
+      } catch (error) {
+        console.error(`[SW] Error sharing document to room ${roomId}:`, error);
+      }
       break;
       
     case 'endRoom':

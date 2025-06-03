@@ -168,11 +168,29 @@ export const SocketProvider = ({ children }) => {
         setConnectionError(null);
       }
     });
-    
-    // Handle document shared event
+      // Handle document shared event
     swMessenger.on('documentShared', (documentData) => {
-      // Handle shared document (implementation depends on your app's needs)
-      console.log('Document shared:', documentData);
+      // Extract data from the potential nested structure
+      const doc = documentData.data || documentData;
+      console.log('Document shared received:', doc);
+      
+      if (doc && doc.document) {
+        // Show notification about the shared document
+        const sender = doc.user || 'Someone';
+        const fileName = doc.document.name || 'a file';
+        const fileType = doc.document.type || 'unknown type';
+        
+        alert(`${sender} shared ${fileName} (${fileType})`);
+        
+        // Here you could implement additional functionality:
+        // 1. Add the document to a shared documents list
+        // 2. Offer a download option
+        // 3. Display the content if it's viewable (like images, pdf, etc)
+        
+        console.log('Document data available at:', doc.document.data);
+      } else {
+        console.error('Invalid document data received:', documentData);
+      }
     });
   };  // Join/leave room when user or room changes
   useEffect(() => {
@@ -262,9 +280,10 @@ export const SocketProvider = ({ children }) => {
       if (!room) console.error('Room not defined');
     }
   };
-
   // Document sharing function
   const shareDocument = (document) => {
+    console.log('shareDocument called with:', document?.name);
+    
     if (swRegistered.current && user && room) {
       const documentData = {
         user: user.name,
@@ -273,7 +292,26 @@ export const SocketProvider = ({ children }) => {
         timestamp: new Date().toISOString(),
       };
       
-      swMessenger.sendMessage('shareDocument', documentData, room);
+      console.log('Sending document to room:', room);
+      
+      swMessenger.sendMessage('shareDocument', documentData, room)
+        .then(() => {
+          console.log('Document shared successfully');
+        })
+        .catch(error => {
+          console.error('Error sharing document:', error);
+          setConnectionError('Failed to share document. Please try again.');
+          
+          // Try to reconnect if connection appears to be lost
+          if (!isConnected) {
+            handleReconnect();
+          }
+        });
+    } else {
+      console.error('Cannot share document: Not connected, missing user, or missing room');
+      if (!swRegistered.current) console.error('Service worker not registered');
+      if (!user) console.error('User not defined');
+      if (!room) console.error('Room not defined');
     }
   };
   // Room ending function
