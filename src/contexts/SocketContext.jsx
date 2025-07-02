@@ -81,8 +81,8 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
       }
       
       // Clean up cross-browser sync
-      if (crossBrowserSync && crossBrowserSync.cleanup) {
-        crossBrowserSync.cleanup();
+      if (crossBrowserIntervalRef.current) {
+        clearInterval(crossBrowserIntervalRef.current);
       }
       
       // We don't disconnect the service worker since it should stay alive for other tabs
@@ -94,94 +94,13 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
   }, []);
   // Helper function to handle reconnection
   const reconnectAttempts = useRef(0);
-  const [crossBrowserSync] = useState(() => {
-    // Initialize cross-browser communication via localStorage polling
-    // This will only work for cross-browser sync (different browser instances)
-    const STORAGE_KEY_PREFIX = 'quicksync_';
-    let lastStorageCheck = Date.now();
-    
-    const pollCrossBrowserMessages = () => {
-      try {
-        const keys = Object.keys(localStorage).filter(key => 
-          key.startsWith(STORAGE_KEY_PREFIX + 'broadcast_') && 
-          !key.includes('processed_')
-        );
-        
-        for (const key of keys) {
-          try {
-            const message = JSON.parse(localStorage.getItem(key));
-            
-            // Only process messages newer than our last check
-            if (message.timestamp > lastStorageCheck) {
-              console.log(`[CrossBrowser] Processing message: ${message.eventName} for room ${message.roomId}`);
-              
-              // Check if this message is for our current room
-              if (message.roomId === room) {
-                // Handle the cross-browser message
-                handleCrossBrowserMessage(message.eventName, message.data);
-              }
-              
-              // Mark message as processed
-              localStorage.setItem(`${key}_processed_${Date.now()}`, 'true');
-            }
-            
-            // Remove processed message
-            localStorage.removeItem(key);
-          } catch (e) {
-            console.error('[CrossBrowser] Error processing message:', e);
-            localStorage.removeItem(key);
-          }
-        }
-        
-        lastStorageCheck = Date.now();
-      } catch (error) {
-        console.error('[CrossBrowser] Error polling messages:', error);
-      }
-    };
-    
-    const broadcastCrossBrowser = (roomId, eventName, data) => {
-      try {
-        const message = {
-          type: 'crossBrowserMessage',
-          roomId: roomId,
-          eventName: eventName,
-          data: data,
-          timestamp: Date.now(),
-          sourceUser: user?.id
-        };
-        
-        const storageKey = `${STORAGE_KEY_PREFIX}broadcast_${roomId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        localStorage.setItem(storageKey, JSON.stringify(message));
-        
-        console.log(`[CrossBrowser] Broadcast message stored: ${eventName} for room ${roomId}`);
-        
-        // Clean up old messages
-        const keys = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY_PREFIX + 'broadcast_'));
-        const now = Date.now();
-        keys.forEach(key => {
-          try {
-            const msg = JSON.parse(localStorage.getItem(key));
-            if (now - msg.timestamp > 30000) { // 30 seconds old
-              localStorage.removeItem(key);
-            }
-          } catch (e) {
-            localStorage.removeItem(key);
-          }
-        });
-      } catch (error) {
-        console.error('[CrossBrowser] Failed to broadcast message:', error);
-      }
-    };
-    
-    // Start polling for cross-browser messages
-    const pollInterval = setInterval(pollCrossBrowserMessages, 2000); // Every 2 seconds
-    
-    return {
-      broadcast: broadcastCrossBrowser,
-      cleanup: () => clearInterval(pollInterval)
-    };
-  });
   
+  // Cross-browser communication state
+  const crossBrowserIntervalRef = useRef(null);
+  const lastStorageCheckRef = useRef(Date.now());
+  const STORAGE_KEY_PREFIX = 'quicksync_';
+  
+  // Cross-browser communication functions
   const handleCrossBrowserMessage = (eventName, data) => {
     console.log(`[CrossBrowser] Handling message: ${eventName}`, data);
     
@@ -217,6 +136,96 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
     }
   };
   
+  const pollCrossBrowserMessages = () => {
+    try {
+      const keys = Object.keys(localStorage).filter(key => 
+        key.startsWith(STORAGE_KEY_PREFIX + 'broadcast_') && 
+        !key.includes('processed_')
+      );
+      
+      for (const key of keys) {
+        try {
+          const message = JSON.parse(localStorage.getItem(key));
+          
+          // Only process messages newer than our last check
+          if (message.timestamp > lastStorageCheckRef.current) {
+            console.log(`[CrossBrowser] Processing message: ${message.eventName} for room ${message.roomId}`);
+            
+            // Check if this message is for our current room
+            if (message.roomId === room) {
+              // Handle the cross-browser message
+              handleCrossBrowserMessage(message.eventName, message.data);
+            }
+            
+            // Mark message as processed
+            localStorage.setItem(`${key}_processed_${Date.now()}`, 'true');
+          }
+          
+          // Remove processed message
+          localStorage.removeItem(key);
+        } catch (e) {
+          console.error('[CrossBrowser] Error processing message:', e);
+          localStorage.removeItem(key);
+        }
+      }
+      
+      lastStorageCheckRef.current = Date.now();
+    } catch (error) {
+      console.error('[CrossBrowser] Error polling messages:', error);
+    }
+  };
+  
+  const broadcastCrossBrowser = (roomId, eventName, data) => {
+    try {
+      const message = {
+        type: 'crossBrowserMessage',
+        roomId: roomId,
+        eventName: eventName,
+        data: data,
+        timestamp: Date.now(),
+        sourceUser: user?.id
+      };
+      
+      const storageKey = `${STORAGE_KEY_PREFIX}broadcast_${roomId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem(storageKey, JSON.stringify(message));
+      
+      console.log(`[CrossBrowser] Broadcast message stored: ${eventName} for room ${roomId}`);
+      
+      // Clean up old messages
+      const keys = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY_PREFIX + 'broadcast_'));
+      const now = Date.now();
+      keys.forEach(key => {
+        try {
+          const msg = JSON.parse(localStorage.getItem(key));
+          if (now - msg.timestamp > 30000) { // 30 seconds old
+            localStorage.removeItem(key);
+          }
+        } catch (e) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (error) {
+      console.error('[CrossBrowser] Failed to broadcast message:', error);
+    }
+  };
+  
+  // Setup cross-browser polling when user and room are available
+  useEffect(() => {
+    if (user && room) {
+      console.log('[CrossBrowser] Starting polling for room:', room);
+      
+      // Start polling for cross-browser messages
+      crossBrowserIntervalRef.current = setInterval(pollCrossBrowserMessages, 2000); // Every 2 seconds
+      
+      return () => {
+        if (crossBrowserIntervalRef.current) {
+          clearInterval(crossBrowserIntervalRef.current);
+          crossBrowserIntervalRef.current = null;
+        }
+      };
+    }
+  }, [user, room]);
+
   // Helper function to handle reconnection
   const handleReconnect = () => {
     const reconnectDelay = 2000; // 2 seconds
@@ -349,8 +358,8 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
           setRoomUsers(users);
           
           // Also broadcast to other browsers via localStorage
-          if (crossBrowserSync && crossBrowserSync.broadcast && room) {
-            crossBrowserSync.broadcast(room, 'roomUsers', users);
+          if (room) {
+            broadcastCrossBrowser(room, 'roomUsers', users);
           }
         } else {
           console.error('Invalid room users data received:', userData);
@@ -586,9 +595,7 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
           console.log('Message sent successfully');
           
           // Also broadcast to other browsers via localStorage
-          if (crossBrowserSync && crossBrowserSync.broadcast) {
-            crossBrowserSync.broadcast(room, 'message', messageData);
-          }
+          broadcastCrossBrowser(room, 'message', messageData);
         })
         .catch(error => {
           console.error('Error sending message:', error);

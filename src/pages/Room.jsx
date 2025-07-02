@@ -252,12 +252,56 @@ const Room = () => {
                     console.log('Is connected:', isConnected);
                     console.log('Service worker controller:', navigator.serviceWorker.controller);
                     console.log('LocalStorage keys:', Object.keys(localStorage).filter(k => k.includes('quicksync')));
+                    
+                    // Check localStorage content
+                    const quicksyncKeys = Object.keys(localStorage).filter(k => k.includes('quicksync'));
+                    quicksyncKeys.forEach(key => {
+                      try {
+                        const value = JSON.parse(localStorage.getItem(key));
+                        console.log(`LocalStorage[${key}]:`, value);
+                      } catch (e) {
+                        console.log(`LocalStorage[${key}]: ${localStorage.getItem(key)}`);
+                      }
+                    });
+                    
                     console.log('==================');
                   }}
                   title="Show debug info"
                   className="bg-yellow-100 hover:bg-yellow-200"
                 >
                   Debug
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    console.log('Manually triggering cross-browser sync check...');
+                    
+                    // Manually trigger a test message broadcast
+                    const testMessage = {
+                      id: `test_${Date.now()}`,
+                      user: user.name,
+                      userId: user.id,
+                      text: `Cross-browser test from ${user.name} at ${new Date().toLocaleTimeString()}`,
+                      timestamp: new Date().toISOString(),
+                    };
+                    
+                    // Store directly in localStorage for testing
+                    const storageKey = `quicksync_broadcast_${roomId}_${Date.now()}_test`;
+                    localStorage.setItem(storageKey, JSON.stringify({
+                      type: 'crossBrowserMessage',
+                      roomId: roomId,
+                      eventName: 'message',
+                      data: testMessage,
+                      timestamp: Date.now(),
+                      sourceUser: user.id
+                    }));
+                    
+                    console.log('Test cross-browser message stored in localStorage');
+                  }}
+                  title="Test cross-browser sync"
+                  className="bg-purple-100 hover:bg-purple-200"
+                >
+                  Cross-Test
                 </Button>
                 <Button
                   variant="secondary"
