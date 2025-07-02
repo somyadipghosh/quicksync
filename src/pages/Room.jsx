@@ -251,12 +251,36 @@ const Room = () => {
                     console.log('Messages:', messages);
                     console.log('Is connected:', isConnected);
                     console.log('Service worker controller:', navigator.serviceWorker.controller);
+                    console.log('LocalStorage keys:', Object.keys(localStorage).filter(k => k.includes('quicksync')));
                     console.log('==================');
                   }}
                   title="Show debug info"
                   className="bg-yellow-100 hover:bg-yellow-200"
                 >
                   Debug
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={async () => {
+                    console.log('Force updating service worker...');
+                    try {
+                      // Unregister current SW
+                      const registrations = await navigator.serviceWorker.getRegistrations();
+                      for (let registration of registrations) {
+                        await registration.unregister();
+                      }
+                      console.log('Service worker unregistered');
+                      
+                      // Force reload to get new SW
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Error updating service worker:', error);
+                    }
+                  }}
+                  title="Force service worker update"
+                  className="bg-red-100 hover:bg-red-200"
+                >
+                  SW Update
                 </Button>
               </div>
               {isRoomCreator ? (
