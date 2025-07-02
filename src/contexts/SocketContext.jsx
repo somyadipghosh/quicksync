@@ -129,14 +129,47 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
       // Check if the message is nested in a data property as the service worker wraps it
       const message = messageData.data || messageData;
       
-      // Don't add if it's a message from ourselves (we've already added it for instant feedback)
-      // Also check for the isEcho flag that indicates this is our message being echoed back
-      if (message.userId === user?.id || message.isEcho === true) {
-        console.log('Ignoring message from self or echo (already displayed):', message.text);
+      console.log('Message details:', {
+        messageUserId: message.userId,
+        currentUserId: user?.id,
+        messageText: message.text,
+        isEcho: message.isEcho,
+        messageId: message.id
+      });
+      
+      // Don't add if it's an echo message (our own message being sent back to us)
+      if (message.isEcho === true) {
+        console.log('Ignoring echo message (already displayed):', message.text);
         return;
       }
       
-      // Check for duplicate messages by ID if present
+      // For messages from other users, always add them
+      // For our own messages, only add if we haven't already added them locally
+      const isFromSelf = message.userId === user?.id;
+      
+      if (isFromSelf) {
+        console.log('Received our own message from server, checking if already displayed');
+        // Check if we already have this message locally
+        setMessages(prevMessages => {
+          const currentMessages = Array.isArray(prevMessages) ? prevMessages : [];
+          const alreadyExists = message.id && currentMessages.some(existingMsg => {
+            const msgId = existingMsg && existingMsg.id ? existingMsg.id : undefined;
+            return msgId === message.id;
+          });
+          
+          if (alreadyExists) {
+            console.log('Our own message already exists locally, skipping');
+            return currentMessages;
+          } else {
+            console.log('Adding our own message from server (missed locally)');
+            return [...currentMessages, message];
+          }
+        });
+        return;
+      }
+      
+      // For messages from other users, always add them
+      console.log('Adding message from another user:', message.text);
       setMessages(prevMessages => {
         // Ensure prevMessages is an array
         const currentMessages = Array.isArray(prevMessages) ? prevMessages : [];
@@ -309,11 +342,11 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
   };  // Join/leave room when user or room changes
   useEffect(() => {
     if (swRegistered.current && user && room) {
-      console.log(`Joining room ${room} as ${user?.name || 'unknown'}`);
+      console.log(`[SocketContext] Joining room ${room} as ${user?.name || 'unknown'} (ID: ${user?.id})`);
       
       // Ensure we have a valid user object with id and name
       if (!user.id || !user.name) {
-        console.error('Invalid user object when joining room:', user);
+        console.error('[SocketContext] Invalid user object when joining room:', user);
         return;
       }
         
