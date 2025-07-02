@@ -202,7 +202,7 @@ const Room = () => {
                   variant="secondary" 
                   onClick={() => setShowUserList(!showUserList)}
                 >
-                  Participants ({Array.isArray(roomUsers) && roomUsers.length > 0 ? roomUsers.length : 1})
+                  Participants ({roomUsers ? [...new Set(roomUsers.map(u => u.userId || u.id?.split('_')[0] || u.id))].length : 1})
                 </Button>                <Button
                   variant="secondary"
                   onClick={() => {
@@ -225,6 +225,38 @@ const Room = () => {
                   title="Refresh participants list"
                 >
                   ↻
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const timestamp = new Date().toLocaleTimeString();
+                    const testMessage = `Test message from ${user.name} at ${timestamp}`;
+                    console.log('Sending test message:', testMessage);
+                    if (isConnected) {
+                      sendMessage(testMessage);
+                    }
+                  }}
+                  title="Send test message"
+                  className="bg-green-100 hover:bg-green-200"
+                >
+                  Test
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    console.log('=== DEBUG INFO ===');
+                    console.log('Current user:', user);
+                    console.log('Room ID:', roomId);
+                    console.log('Room users:', roomUsers);
+                    console.log('Messages:', messages);
+                    console.log('Is connected:', isConnected);
+                    console.log('Service worker controller:', navigator.serviceWorker.controller);
+                    console.log('==================');
+                  }}
+                  title="Show debug info"
+                  className="bg-yellow-100 hover:bg-yellow-200"
+                >
+                  Debug
                 </Button>
               </div>
               {isRoomCreator ? (
@@ -296,17 +328,25 @@ const Room = () => {
                 
                 {/* Show others already in the room */}
                 {Array.isArray(roomUsers) && roomUsers.length > 0 ? (
-                  roomUsers
-                    .filter(roomUser => 
-                      // Ensure we have valid data and filter out current user
-                      roomUser && roomUser.id && roomUser.id !== user.id
-                    )
-                    .map((roomUser, index) => (
-                      <li key={`user-${roomUser.id}-${index}`} className="py-2 border-b border-gray-100">
-                        <span className="font-medium">{roomUser.name || "Unknown User"}</span>
-                        {roomUser.isCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
-                      </li>
-                    ))
+                  // First, deduplicate by base userId (extract from composite IDs like "userId_clientId")
+                  // Then filter out the current user
+                  [...new Map(roomUsers.map(item => {
+                    const baseUserId = item.userId || item.id?.split('_')[0] || item.id;
+                    return [baseUserId, item];
+                  })).values()]
+                    .filter(roomUser => {
+                      const baseUserId = roomUser.userId || roomUser.id?.split('_')[0] || roomUser.id;
+                      return baseUserId !== user.id;
+                    })
+                    .map((roomUser) => {
+                      const baseUserId = roomUser.userId || roomUser.id?.split('_')[0] || roomUser.id;
+                      return (
+                        <li key={`user-${baseUserId}`} className="py-2 border-b border-gray-100">
+                          <span className="font-medium">{roomUser.name.split(' (')[0] || "Unknown User"}</span>
+                          {roomUser.isCreator && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Host</span>}
+                        </li>
+                      );
+                    })
                 ) : (
                   <li className="py-2 text-gray-500 text-sm italic">
                     No other participants yet
@@ -437,7 +477,8 @@ const Room = () => {
 
             {/* Input area */}
             <div className="border-t border-gray-200 p-4">
-              <form onSubmit={handleSendMessage} className="flex gap-2">                <input
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <input
                   type="text"
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
@@ -473,6 +514,21 @@ const Room = () => {
                     disabled={!isConnected}
                   />
                 </div>
+                
+                <Button 
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    console.log('Sending test message');
+                    if (isConnected) {
+                      sendMessage(`Test message from ${user.name} at ${new Date().toLocaleTimeString()}`);
+                    }
+                  }}
+                  disabled={!isConnected}
+                  title="Send a test message"
+                >
+                  Test
+                </Button>
                 
                 <Button 
                   type="submit" 

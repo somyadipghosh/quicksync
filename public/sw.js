@@ -161,12 +161,34 @@ setInterval(async () => {
   }
 }, 60000); // Every 60 seconds
 
+// Helper function to get a formatted list of users in a room
+const getRoomUsers = (roomId) => {
+  const allUsersInRoom = [...USERS.values()].filter(user => user.roomId === roomId);
+  
+  return allUsersInRoom.map(user => {
+    const clientsForThisUser = allUsersInRoom.filter(u => u.userId === user.userId);
+    const tabIndex = clientsForThisUser.findIndex(u => u.clientId === user.clientId);
+    const tabLabel = clientsForThisUser.length > 1 ? ` (Tab ${tabIndex + 1})` : '';
+    
+    return {
+      id: `${user.userId}_${user.clientId}`, // Unique ID for each client instance
+      name: user.name + tabLabel,
+      isCreator: user.isCreator || false,
+      clientId: user.clientId,
+      userId: user.userId
+    };
+  });
+};
+
 // Process messages from clients
 self.addEventListener('message', async (event) => {
-  const { type, data, roomId, userId } = event.data;
-  const clientId = event.source.id;
-  
-  switch (type) {
+  try {
+    const { type, data, roomId, userId } = event.data || {};
+    const clientId = event.source.id;
+    
+    console.log(`[SW] Received message of type: ${type}`, { clientId, roomId, userId, data: data ? '(data present)' : '(no data)' });
+    
+    switch (type) {
     case 'joinRoom':
       console.log(`[SW] Join room request: Client ${clientId} wants to join room ${roomId}`);
       console.log(`[SW] User data:`, data.user);
@@ -184,30 +206,9 @@ self.addEventListener('message', async (event) => {
       const roomClients = ROOMS.get(roomId);
       if (!roomClients.includes(clientId)) {
         roomClients.push(clientId);
-        ROOMS.set(roomId, roomClients);
         console.log(`[SW] Added client ${clientId} to room ${roomId}. Room now has clients: [${roomClients.join(', ')}]`);
       } else {
         console.log(`[SW] Client ${clientId} already in room ${roomId}`);
-      }
-      
-      // Check if we already have this user (by userId) in another browser/tab in this room
-      const existingUser = [...USERS.entries()]
-        .find(([_, userData]) => 
-          userData.userId === data.user.id && 
-          userData.roomId === roomId
-        );
-        
-      if (existingUser) {
-        console.log(`[SW] User ${data.user.name} already in room ${roomId}, updating client ID from ${existingUser[0]} to ${clientId}`);
-        // Remove the old entry
-        USERS.delete(existingUser[0]);
-        
-        // Also remove old client from room clients if it exists
-        const oldClientIndex = roomClients.indexOf(existingUser[0]);
-        if (oldClientIndex > -1) {
-          roomClients.splice(oldClientIndex, 1);
-          console.log(`[SW] Removed old client ${existingUser[0]} from room clients`);
-        }
       }
       
       // Store user data with proper structure
@@ -216,23 +217,26 @@ self.addEventListener('message', async (event) => {
         name: data.user.name,
         roomId: roomId,
         joinedAt: Date.now(),
-        isCreator: data.user.isRoomCreator || data.user.isCreator || false
+        isCreator: data.user.isRoomCreator || data.user.isCreator || false,
+        clientId: clientId // Store client ID for tracking
       });
       
-      console.log(`[SW] User ${data.user.name} (${data.user.id}) joined room ${roomId}`);
+      console.log(`[SW] User ${data.user.name} (${data.user.id}) joined room ${roomId} from client ${clientId}`);
       console.log(`[SW] Current users in system:`, [...USERS.entries()].map(([cId, userData]) => `${cId}: ${userData.name} in ${userData.roomId}`));
-        // Notify all clients in the room about updated user list
-      const roomUsers = [...USERS.values()]
-        .filter(user => user.roomId === roomId)
-        .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
       
-      console.log(`[SW] Broadcasting updated user list for room ${roomId}:`, roomUsers);
-      broadcastToRoom(roomId, 'roomUsers', roomUsers);
+      // Force update the room clients list
+      ROOMS.set(roomId, roomClients);
+      console.log(`[SW] Updated room ${roomId} clients:`, roomClients);
+        // Notify all clients in the room about updated user list
+      const roomUsersForJoin = getRoomUsers(roomId);
+      
+      console.log(`[SW] Broadcasting updated user list for room ${roomId}:`, roomUsersForJoin);
+      broadcastToRoom(roomId, 'roomUsers', roomUsersForJoin);
       
       // Also send directly to the newly joined client for immediate UI update
       event.source.postMessage({
         type: 'roomUsers',
-        data: roomUsers,
+        data: roomUsersForJoin,
         roomId: roomId
       });
       
@@ -275,20 +279,10 @@ self.addEventListener('message', async (event) => {
         
       // Notify remaining clients about updated user list
       if (ROOMS.has(roomId)) {
-        // Create a set to track unique user IDs we've already processed
-        const processedUserIds = new Set();
-        const roomUsers = [...USERS.values()]
-          .filter(user => {
-            if (user.roomId === roomId && !processedUserIds.has(user.userId)) {
-              processedUserIds.add(user.userId);
-              return true;
-            }
-            return false;
-          })
-          .map(({ userId, name, isCreator }) => ({ id: userId, name, isCreator }));
+        const roomUsersForLeave = getRoomUsers(roomId);
         
-        console.log(`[SW] User left room ${roomId}, broadcasting updated user list:`, roomUsers);
-        broadcastToRoom(roomId, 'roomUsers', roomUsers);
+        console.log(`[SW] User left room ${roomId}, broadcasting updated user list:`, roomUsersForLeave);
+        broadcastToRoom(roomId, 'roomUsers', roomUsersForLeave);
       } else {
         console.log(`[SW] Last user left room ${roomId}, room has been removed`);
       }
@@ -458,34 +452,26 @@ self.addEventListener('message', async (event) => {
         }
       }
       break;    case 'requestRoomUsers':
-      if (data.roomId) {
-        // Create a set to track unique user IDs we've already processed
-        const processedUserIds = new Set();
-        const roomUsers = [...USERS.values()]
-          .filter(user => {
-            if (user.roomId === data.roomId && !processedUserIds.has(user.userId)) {
-              processedUserIds.add(user.userId);
-              return true;
-            }
-            return false;
-          })
-          .map(({ userId, name, isCreator }) => ({ 
-            id: userId, 
-            name, 
-            isCreator: isCreator === undefined ? false : isCreator // Handle undefined isCreator
-          }));
+      // Handle both data.roomId and direct roomId properties
+      const requestedRoomId = data?.roomId || roomId;
+      if (requestedRoomId) {
+        const roomUsersForRequest = getRoomUsers(requestedRoomId);
         
-        console.log(`[SW] Responding to request for room ${data.roomId} users:`, roomUsers);
+        console.log(`[SW] Responding to request for room ${requestedRoomId} users:`, roomUsersForRequest);
+        console.log(`[SW] Total clients in room: ${ROOMS.get(requestedRoomId)?.length || 0}`);
+        console.log(`[SW] All users in system:`, [...USERS.entries()]);
         
         // Send to the requesting client
         event.source.postMessage({
           type: 'roomUsers',
-          data: roomUsers,
-          roomId: data.roomId
+          data: roomUsersForRequest,
+          roomId: requestedRoomId
         });
         
         // Also broadcast to all clients to ensure consistency
-        broadcastToRoom(data.roomId, 'roomUsers', roomUsers);
+        broadcastToRoom(requestedRoomId, 'roomUsers', roomUsersForRequest);
+      } else {
+        console.warn('[SW] requestRoomUsers called without valid roomId:', { data, roomId });
       }
       break;
       
@@ -496,6 +482,9 @@ self.addEventListener('message', async (event) => {
         console.log('[SW] All clients claimed');
       });
       break;
+  }
+  } catch (error) {
+    console.error('[SW] Error handling message:', error, { type, clientId, roomId, data });
   }
 });
 
