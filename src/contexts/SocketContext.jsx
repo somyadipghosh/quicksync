@@ -214,42 +214,14 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
         
         // Ensure we have a valid array
         if (users && Array.isArray(users)) {
-          // Ensure the current user is always in the list
-          setRoomUsers(prevUsers => {
-            try {
-              // Create a map of all existing users by ID for quick lookup
-              const updatedUsers = [...users];
-              const userIds = new Set(updatedUsers.map(u => u?.id).filter(Boolean));
-              
-              // If current user isn't in the list, add them
-              if (user && user.id && !userIds.has(user.id)) {
-                console.log('Current user not found in roomUsers, adding them');
-                updatedUsers.push({
-                  id: user.id,
-                  name: user.name,
-                  isCreator: isRoomCreator || false // Default to false if undefined
-                });
-              }
-              
-              return updatedUsers;
-            } catch (error) {
-              console.error('Error processing room users:', error);
-              // Return previous state in case of error
-              return prevUsers;
-            }
-          });
+          // Trust the service worker's user list - it already includes all users in the room
+          // including the current user. The Room component handles deduplication and display logic.
+          console.log('Setting room users from service worker:', users);
+          setRoomUsers(users);
         } else {
           console.error('Invalid room users data received:', userData);
-          // Even with invalid data, make sure current user is in list
-          if (user) {
-            setRoomUsers([{
-              id: user.id,
-              name: user.name,
-              isCreator: isRoomCreator || false // Default to false if undefined
-            }]);
-          } else {
-            setRoomUsers([]);
-          }
+          // Set empty array if invalid data
+          setRoomUsers([]);
         }
       } catch (error) {
         console.error('Exception in room users handler:', error);
