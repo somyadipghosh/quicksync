@@ -1,5 +1,5 @@
 // Service Worker for QuickSync application
-const CACHE_NAME = 'quicksync-cache-v1';
+const CACHE_NAME = 'quicksync-cache-v2'; // Increment version to force update
 const CHANNELS = new Map(); // Store active broadcast channels
 const ROOMS = new Map();    // Store room data
 const USERS = new Map();    // Store connected users by client ID
@@ -38,20 +38,23 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   console.log('[Service Worker] Activating Service Worker');
   event.waitUntil(
-    caches.keys().then((keyList) => {
-      return Promise.all(keyList.map((key) => {
-        if (key !== CACHE_NAME) {
-          console.log('[Service Worker] Removing old cache', key);
-          return caches.delete(key);
-        }
-      }));
-    })
+    Promise.all([
+      // Clean old caches
+      caches.keys().then((keyList) => {
+        return Promise.all(keyList.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('[Service Worker] Removing old cache', key);
+            return caches.delete(key);
+          }
+        }));
+      }),
+      // Claim any clients that loaded prior to the service worker being ready
+      // This ensures the SW controls all clients immediately
+      self.clients.claim().then(() => {
+        console.log('[Service Worker] All clients claimed successfully');
+      })
+    ])
   );
-  
-  // Claim any clients that loaded prior to the service worker being ready
-  // This ensures the SW controls all clients immediately
-  console.log('[Service Worker] Claiming all clients');
-  return self.clients.claim();
 });
 
 // Helper function to broadcast a message to all clients in a room
@@ -183,15 +186,32 @@ const getRoomUsers = (roomId) => {
 // Process messages from clients
 self.addEventListener('message', async (event) => {
   try {
-    const { type, data, roomId, userId } = event.data || {};
-    const clientId = event.source.id;
+    const messageData = event.data || {};
+    const { type, data, roomId, userId } = messageData;
+    const clientId = event.source?.id || 'unknown';
     
     console.log(`[SW] Received message of type: ${type}`, { clientId, roomId, userId, data: data ? '(data present)' : '(no data)' });
+    
+    // Ensure we have a valid event.source for responses
+    if (!event.source) {
+      console.error('[SW] No event.source available, cannot respond to client');
+      return;
+    }
     
     switch (type) {
     case 'joinRoom':
       console.log(`[SW] Join room request: Client ${clientId} wants to join room ${roomId}`);
-      console.log(`[SW] User data:`, data.user);
+      console.log(`[SW] User data:`, data?.user);
+      
+      if (!roomId || !data?.user) {
+        console.error('[SW] Invalid joinRoom request - missing roomId or user data');
+        event.source.postMessage({
+          type: 'error',
+          originalType: 'joinRoom',
+          error: 'Missing roomId or user data'
+        });
+        return;
+      }
       
       // Add client to room
       if (!ROOMS.has(roomId)) {
@@ -247,6 +267,13 @@ self.addEventListener('message', async (event) => {
         type: 'previousMessages',
         data: previousMessages,
         roomId: roomId
+      });
+      
+      // Send success confirmation
+      event.source.postMessage({
+        type: 'joinRoomSuccess',
+        roomId: roomId,
+        clientId: clientId
       });
       break;
         case 'leaveRoom':
@@ -460,18 +487,23 @@ self.addEventListener('message', async (event) => {
         console.log(`[SW] Responding to request for room ${requestedRoomId} users:`, roomUsersForRequest);
         console.log(`[SW] Total clients in room: ${ROOMS.get(requestedRoomId)?.length || 0}`);
         console.log(`[SW] All users in system:`, [...USERS.entries()]);
-        
-        // Send to the requesting client
-        event.source.postMessage({
-          type: 'roomUsers',
-          data: roomUsersForRequest,
-          roomId: requestedRoomId
-        });
-        
-        // Also broadcast to all clients to ensure consistency
-        broadcastToRoom(requestedRoomId, 'roomUsers', roomUsersForRequest);
+            // Send to the requesting client
+      event.source.postMessage({
+        type: 'roomUsers',
+        data: roomUsersForRequest,
+        roomId: requestedRoomId
+      });
+      
+      // Also broadcast to all clients to ensure consistency
+      broadcastToRoom(requestedRoomId, 'roomUsers', roomUsersForRequest);
       } else {
         console.warn('[SW] requestRoomUsers called without valid roomId:', { data, roomId });
+        // Send empty response to prevent hanging
+        event.source.postMessage({
+          type: 'roomUsers',
+          data: [],
+          roomId: requestedRoomId || 'unknown'
+        });
       }
       break;
       
@@ -482,9 +514,32 @@ self.addEventListener('message', async (event) => {
         console.log('[SW] All clients claimed');
       });
       break;
+      
+    default:
+      console.warn(`[SW] Unknown message type: ${type}`);
+      // Send acknowledgment for unknown messages to prevent hanging
+      event.source.postMessage({
+        type: 'ack',
+        originalType: type,
+        error: 'Unknown message type'
+      });
+      break;
   }
   } catch (error) {
     console.error('[SW] Error handling message:', error, { type, clientId, roomId, data });
+    
+    // Send error response to prevent client from hanging
+    if (event.source) {
+      try {
+        event.source.postMessage({
+          type: 'error',
+          originalType: type,
+          error: error.message
+        });
+      } catch (responseError) {
+        console.error('[SW] Failed to send error response:', responseError);
+      }
+    }
   }
 });
 

@@ -95,11 +95,14 @@ class ServiceWorkerMessenger {
       const { type, data } = event.data;
       
       if (!type) {
-        console.warn('[SWMessenger] Received message with no type');
+        console.warn('[SWMessenger] Received message with no type:', event.data);
         return;
       }
       
       console.log(`[SWMessenger] Received message of type: ${type}`);
+      
+      // Debug: Log full message for debugging
+      console.log('SW message received in main thread:', event.data);
       
       if (this._messageHandlers.has(type)) {
         const handlers = this._messageHandlers.get(type);
@@ -154,22 +157,13 @@ class ServiceWorkerMessenger {
     }
     
     try {
-      // Make sure we have a valid controller
-      if (!navigator.serviceWorker.controller) {
-        console.warn('[SWMessenger] ServiceWorker controller is missing, attempting to recover');
-        
-        // Try to re-establish connection
-        if (this._sw) {
-          // Use the SW instance we already have
-        } else if (navigator.serviceWorker.ready) {
-          navigator.serviceWorker.ready.then(registration => {
-            this._sw = registration.active;
-            // Queue this message for retry
-            this._messageQueue.push({ type, data, roomId });
-          });
-        }
-        
-        return Promise.reject(new Error('ServiceWorker controller not available'));
+      // Use the active controller or our stored SW reference
+      const serviceWorker = navigator.serviceWorker.controller || this._sw;
+      
+      if (!serviceWorker) {
+        console.warn('[SWMessenger] No service worker available, queueing message');
+        this._messageQueue.push({ type, data, roomId });
+        return Promise.reject(new Error('ServiceWorker not available'));
       }
       
       // Construct the message
@@ -182,7 +176,7 @@ class ServiceWorkerMessenger {
       };
       
       console.log(`[SWMessenger] Sending message of type: ${type}`);
-      this._sw.postMessage(message);
+      serviceWorker.postMessage(message);
       return Promise.resolve();
     } catch (error) {
       console.error(`[SWMessenger] Error sending message of type ${type}:`, error);
