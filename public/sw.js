@@ -1,14 +1,12 @@
 // Service Worker for QuickSync application
-const CACHE_NAME = 'quicksync-cache-v3'; // Increment version to force update
+const CACHE_NAME = 'quicksync-cache-v4'; // Increment version to force update
 const CHANNELS = new Map(); // Store active broadcast channels
 const ROOMS = new Map();    // Store room data
 const USERS = new Map();    // Store connected users by client ID
 let messageCounter = 0;     // To ensure unique message IDs
 
-// Cross-browser communication via localStorage polling
-const STORAGE_KEY_PREFIX = 'quicksync_';
-const HEARTBEAT_INTERVAL = 5000; // 5 seconds
-let lastStorageCheck = Date.now();
+// Cross-browser communication will be handled by the main thread, not the service worker
+// Service workers don't have access to localStorage
 
 // Helper function to generate unique IDs for messages and documents
 const generateUniqueId = (prefix = 'msg', userId = null) => {
@@ -57,50 +55,12 @@ self.addEventListener('activate', (event) => {
       // This ensures the SW controls all clients immediately
       self.clients.claim().then(() => {
         console.log('[Service Worker] All clients claimed successfully');
-        // Load existing room state from localStorage
-        loadRoomStateFromStorage();
       })
     ])
   );
 });
 
-// Load room state from localStorage on SW startup
-const loadRoomStateFromStorage = () => {
-  try {
-    const keys = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY_PREFIX + 'room_'));
-    
-    for (const key of keys) {
-      try {
-        const roomState = JSON.parse(localStorage.getItem(key));
-        const roomId = roomState.roomId;
-        
-        // Only load recent room state (less than 10 minutes old)
-        if (Date.now() - roomState.timestamp < 10 * 60 * 1000) {
-          console.log(`[SW] Loading room state for ${roomId} from localStorage`);
-          
-          // Restore messages
-          if (roomState.messages && Array.isArray(roomState.messages)) {
-            ROOM_MESSAGES.set(roomId, roomState.messages);
-          }
-          
-          // Note: We don't restore USERS and ROOMS here because they contain
-          // active client connections that might be stale. These will be rebuilt
-          // as clients reconnect.
-        } else {
-          // Clean up old room state
-          localStorage.removeItem(key);
-        }
-      } catch (e) {
-        console.error('[SW] Error loading room state:', e);
-        localStorage.removeItem(key);
-      }
-    }
-  } catch (error) {
-    console.error('[SW] Error loading room states:', error);
-  }
-};
-
-// Helper function to broadcast a message to all clients in a room
+// Also use BroadcastChannel for same-browser communication
 // excludeClientId parameter allows us to skip sending to the originating client
 const broadcastToRoom = async (roomId, eventName, data, excludeClientId = null) => {
   const roomClients = ROOMS.get(roomId) || [];
@@ -143,107 +103,12 @@ const broadcastToRoom = async (roomId, eventName, data, excludeClientId = null) 
     console.log(`[SW] Room ${roomId} has clients: [${roomClients.join(', ')}]`);
     console.log(`[SW] Available clients: [${clients.map(c => c.id).join(', ')}]`);
     
-    // Try cross-browser communication via localStorage and BroadcastChannel
+    // Try BroadcastChannel for same-browser tabs
     broadcastCrossBrowser(roomId, eventName, data, excludeClientId);
   }
 };
 
-// Cross-browser communication via localStorage
-const broadcastViaCrossBrowser = (roomId, eventName, data, excludeClientId = null) => {
-  console.log(`[SW] Attempting cross-browser broadcast for room ${roomId}`);
-  
-  try {
-    const message = {
-      type: 'crossBrowserMessage',
-      roomId: roomId,
-      eventName: eventName,
-      data: data,
-      excludeClientId: excludeClientId,
-      timestamp: Date.now(),
-      sourceWorker: 'quicksync-sw' // Identifier for this SW
-    };
-    
-    // Store in localStorage with a unique key
-    const storageKey = `${STORAGE_KEY_PREFIX}broadcast_${roomId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    localStorage.setItem(storageKey, JSON.stringify(message));
-    
-    // Clean up old messages (older than 30 seconds)
-    cleanupOldStorageMessages();
-    
-    console.log(`[SW] Cross-browser message stored in localStorage: ${storageKey}`);
-  } catch (error) {
-    console.error('[SW] Failed to store cross-browser message:', error);
-  }
-};
-
-// Clean up old localStorage messages
-const cleanupOldStorageMessages = () => {
-  try {
-    const now = Date.now();
-    const keys = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_KEY_PREFIX + 'broadcast_'));
-    
-    keys.forEach(key => {
-      try {
-        const message = JSON.parse(localStorage.getItem(key));
-        // Remove messages older than 30 seconds
-        if (now - message.timestamp > 30000) {
-          localStorage.removeItem(key);
-        }
-      } catch (e) {
-        // Invalid message, remove it
-        localStorage.removeItem(key);
-      }
-    });
-  } catch (error) {
-    console.error('[SW] Error cleaning up storage messages:', error);
-  }
-};
-
-// Poll localStorage for cross-browser messages
-const pollCrossBrowserMessages = async () => {
-  try {
-    const keys = Object.keys(localStorage).filter(key => 
-      key.startsWith(STORAGE_KEY_PREFIX + 'broadcast_') && 
-      !key.includes('processed_')
-    );
-    
-    for (const key of keys) {
-      try {
-        const message = JSON.parse(localStorage.getItem(key));
-        
-        // Only process messages newer than our last check
-        if (message.timestamp > lastStorageCheck) {
-          console.log(`[SW] Processing cross-browser message: ${message.eventName} for room ${message.roomId}`);
-          
-          // Check if we have clients in this room
-          const roomClients = ROOMS.get(message.roomId) || [];
-          if (roomClients.length > 0) {
-            // Broadcast to our local clients
-            await broadcastToRoom(message.roomId, message.eventName, message.data, message.excludeClientId);
-          }
-          
-          // Mark message as processed by this SW instance
-          localStorage.setItem(`${key}_processed_${Date.now()}`, 'true');
-        }
-        
-        // Remove processed message
-        localStorage.removeItem(key);
-      } catch (e) {
-        console.error('[SW] Error processing cross-browser message:', e);
-        localStorage.removeItem(key);
-      }
-    }
-    
-    lastStorageCheck = Date.now();
-  } catch (error) {
-    console.error('[SW] Error polling cross-browser messages:', error);
-  }
-};
-
-// Start polling for cross-browser messages
-setInterval(pollCrossBrowserMessages, 1000); // Check every second
-
-// Also use BroadcastChannel for same-browser communication
+// Use BroadcastChannel for same-browser communication
 let broadcastChannel;
 try {
   broadcastChannel = new BroadcastChannel('quicksync-room-sync');
@@ -268,7 +133,7 @@ try {
   console.error('[SW] BroadcastChannel not supported:', error);
 }
 
-// Enhanced broadcast function that uses both localStorage and BroadcastChannel
+// Enhanced broadcast function that uses BroadcastChannel for same-browser tabs
 const broadcastCrossBrowser = (roomId, eventName, data, excludeClientId = null) => {
   // Use BroadcastChannel for same-browser tabs
   if (broadcastChannel) {
@@ -286,9 +151,6 @@ const broadcastCrossBrowser = (roomId, eventName, data, excludeClientId = null) 
       console.error('[SW] Failed to send BroadcastChannel message:', error);
     }
   }
-  
-  // Use localStorage for cross-browser sync
-  broadcastViaCrossBrowser(roomId, eventName, data, excludeClientId);
 };
 
 // Store room messages
@@ -465,20 +327,6 @@ self.addEventListener('message', async (event) => {
         clientId: clientId
       });
       
-      // Store room state in localStorage for cross-browser sync
-      try {
-        const roomState = {
-          roomId: roomId,
-          users: [...USERS.entries()].filter(([id, user]) => user.roomId === roomId),
-          messages: ROOM_MESSAGES.get(roomId) || [],
-          timestamp: Date.now()
-        };
-        localStorage.setItem(`${STORAGE_KEY_PREFIX}room_${roomId}`, JSON.stringify(roomState));
-        console.log(`[SW] Stored room state for cross-browser sync`);
-      } catch (error) {
-        console.error('[SW] Failed to store room state:', error);
-      }
-      
       break;
         case 'leaveRoom':
       if (ROOMS.has(roomId)) {
@@ -568,20 +416,6 @@ self.addEventListener('message', async (event) => {
         roomId: roomId,
         messageId: `msg_${Date.now()}_${messageCounter++}`
       });
-      
-      // Update room state in localStorage for cross-browser sync
-      try {
-        const roomState = {
-          roomId: roomId,
-          users: [...USERS.entries()].filter(([id, user]) => user.roomId === roomId),
-          messages: ROOM_MESSAGES.get(roomId) || [],
-          timestamp: Date.now()
-        };
-        localStorage.setItem(`${STORAGE_KEY_PREFIX}room_${roomId}`, JSON.stringify(roomState));
-        console.log(`[SW] Updated room state in localStorage after message`);
-      } catch (error) {
-        console.error('[SW] Failed to update room state after message:', error);
-      }
       
       console.log(`[SW] ====== MESSAGE HANDLING END ======`);
       break;    case 'shareDocument':
