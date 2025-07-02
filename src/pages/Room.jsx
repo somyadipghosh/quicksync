@@ -305,6 +305,35 @@ const Room = () => {
                 </Button>
                 <Button
                   variant="secondary"
+                  onClick={() => {
+                    console.log('Requesting service worker debug info...');
+                    if (navigator.serviceWorker.controller) {
+                      navigator.serviceWorker.controller.postMessage({
+                        type: 'debug',
+                        roomId: roomId
+                      });
+                      
+                      // Listen for debug response
+                      const handleDebugResponse = (event) => {
+                        if (event.data && event.data.type === 'debugResponse') {
+                          console.log('=== SERVICE WORKER DEBUG RESPONSE ===');
+                          console.log('SW Debug Data:', event.data.data);
+                          console.log('=====================================');
+                          navigator.serviceWorker.removeEventListener('message', handleDebugResponse);
+                        }
+                      };
+                      navigator.serviceWorker.addEventListener('message', handleDebugResponse);
+                    } else {
+                      console.error('No service worker controller available');
+                    }
+                  }}
+                  title="Debug service worker state"
+                  className="bg-orange-100 hover:bg-orange-200"
+                >
+                  SW Debug
+                </Button>
+                <Button
+                  variant="secondary"
                   onClick={async () => {
                     console.log('Force updating service worker...');
                     try {

@@ -239,9 +239,24 @@ self.addEventListener('message', async (event) => {
   try {
     const messageData = event.data || {};
     const { type, data, roomId, userId } = messageData;
-    const clientId = event.source?.id || 'unknown';
+    
+    // Get client ID more reliably
+    let clientId = 'unknown';
+    if (event.source && event.source.id) {
+      clientId = event.source.id;
+    } else if (event.ports && event.ports[0]) {
+      clientId = `port_${Date.now()}`;
+    } else {
+      clientId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
     
     console.log(`[SW] Received message of type: ${type}`, { clientId, roomId, userId, data: data ? '(data present)' : '(no data)' });
+    console.log(`[SW] Event source details:`, { 
+      hasSource: !!event.source, 
+      sourceId: event.source?.id, 
+      sourceUrl: event.source?.url,
+      sourceType: event.source?.type 
+    });
     
     // Ensure we have a valid event.source for responses
     if (!event.source) {
@@ -281,6 +296,15 @@ self.addEventListener('message', async (event) => {
       } else {
         console.log(`[SW] Client ${clientId} already in room ${roomId}`);
       }
+      
+      // Force update the room clients list and verify
+      ROOMS.set(roomId, roomClients);
+      const verifyClients = ROOMS.get(roomId);
+      console.log(`[SW] ✅ Room ${roomId} verified clients after join:`, verifyClients);
+      
+      // Also verify against actual connected clients
+      const allClients = await self.clients.matchAll();
+      console.log(`[SW] 🔍 All connected clients:`, allClients.map(c => ({ id: c.id, url: c.url, type: c.type })));
       
       // Store user data with proper structure
       USERS.set(clientId, {
@@ -565,6 +589,29 @@ self.addEventListener('message', async (event) => {
       self.clients.claim().then(() => {
         console.log('[SW] All clients claimed');
       });
+      break;
+      
+    case 'debug':
+      console.log('=== SERVICE WORKER DEBUG ===');
+      console.log('ROOMS:', [...ROOMS.entries()]);
+      console.log('USERS:', [...USERS.entries()]);
+      console.log('ROOM_MESSAGES:', [...ROOM_MESSAGES.entries()].map(([room, msgs]) => [room, msgs.length]));
+      
+      // Get current clients
+      const debugClients = await self.clients.matchAll();
+      console.log('All clients:', debugClients.map(c => ({ id: c.id, url: c.url, type: c.type })));
+      
+      // Send debug info back to client
+      event.source.postMessage({
+        type: 'debugResponse',
+        data: {
+          rooms: [...ROOMS.entries()],
+          users: [...USERS.entries()],
+          messageCount: [...ROOM_MESSAGES.entries()].map(([room, msgs]) => [room, msgs.length]),
+          clients: debugClients.map(c => ({ id: c.id, url: c.url, type: c.type }))
+        }
+      });
+      console.log('=== END DEBUG ===');
       break;
       
     default:
