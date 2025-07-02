@@ -225,14 +225,9 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
         }
       } catch (error) {
         console.error('Exception in room users handler:', error);
-        // Make sure current user is in list
-        if (user) {
-          setRoomUsers([{
-            id: user.id,
-            name: user.name,
-            isCreator: isRoomCreator || false // Default to false if undefined
-          }]);
-        }
+        // Set empty array if there's an error - don't add current user manually
+        // The service worker should handle user management
+        setRoomUsers([]);
       }
     });
 
@@ -310,6 +305,13 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
       } else {
         console.error('Invalid document data received:', documentData);
       }
+    });
+
+    // Handle join room success confirmation
+    swMessenger.on('joinRoomSuccess', (data) => {
+      console.log('Successfully joined room:', data);
+      // This is just a confirmation message, no action needed
+      // The roomUsers and previousMessages events will handle the actual data
     });
   };  // Join/leave room when user or room changes
   useEffect(() => {
