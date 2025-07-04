@@ -9,6 +9,11 @@ export const useSocketContext = () => useContext(SocketContext);
 // Get server URL from environment or fallback to localhost
 const getServerUrl = () => {
   if (typeof window !== 'undefined') {
+    // In production, if we're on Vercel, use the same domain
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return window.location.origin;
+    }
+    // Use environment variable or fallback to localhost
     return import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
   }
   return 'http://localhost:5000';

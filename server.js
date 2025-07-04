@@ -11,8 +11,9 @@ const server = http.createServer(app);
 
 // Environment configuration
 const PORT = process.env.PORT || 5000;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const CLIENT_URL = process.env.CLIENT_URL || process.env.VERCEL_URL || 'http://localhost:5173';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_VERCEL = process.env.VERCEL === '1';
 
 // Socket.IO configuration with production-ready settings
 const io = new Server(server, {
@@ -23,7 +24,8 @@ const io = new Server(server, {
   },
   pingTimeout: 60000,
   pingInterval: 25000,
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  path: '/socket.io/'
 });
 
 app.use(cors({
@@ -342,10 +344,15 @@ process.on('SIGINT', () => {
   });
 });
 
-// Start server
-server.listen(PORT, () => {
-  console.log(`🚀 FastSync server running on port ${PORT}`);
-  console.log(`📊 Environment: ${NODE_ENV}`);
-  console.log(`🔗 Client URL: ${CLIENT_URL}`);
-  console.log(`⏰ Started at: ${new Date().toISOString()}`);
-});
+// Start server (only if not in Vercel serverless environment)
+if (!IS_VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`🚀 FastSync server running on port ${PORT}`);
+    console.log(`📊 Environment: ${NODE_ENV}`);
+    console.log(`🔗 Client URL: ${CLIENT_URL}`);
+    console.log(`⏰ Started at: ${new Date().toISOString()}`);
+  });
+}
+
+// Export for Vercel serverless functions
+export default server;

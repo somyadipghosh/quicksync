@@ -1,0 +1,8 @@
+# Files and directories to ignore during Vercel builds
+.vercel
+.env.local
+.env.development
+README.md
+docs/
+*.log
+.git/

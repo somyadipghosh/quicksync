@@ -9,6 +9,7 @@
     "dev:full": "concurrently \"npm run dev:backend\" \"npm run dev\"",
     "build": "vite build",
     "build:production": "NODE_ENV=production vite build",
+    "vercel-build": "vite build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
