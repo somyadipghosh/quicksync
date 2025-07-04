@@ -8,7 +8,7 @@ import Button from '../components/ui/Button';
 const Welcome = () => {
   const [name, setName] = useState('');
   const [error, setError] = useState('');
-  const { setUserName } = useUserContext();
+  const { setUserName, joinRoom } = useUserContext();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const roomId = searchParams.get('room');
@@ -21,12 +21,16 @@ const Welcome = () => {
       return;
     }
     
+    console.log(`Setting user name: ${name}`);
     setUserName(name);
     
-    // If there's a room ID in the URL, redirect to that room
+    // If there's a room ID in the URL, join that room and redirect
     if (roomId) {
+      console.log(`Joining room from URL: ${roomId}`);
+      joinRoom(roomId); // Set the room in UserContext
       navigate(`/room/${roomId}`);
     } else {
+      console.log('No room ID, redirecting to rooms page');
       navigate('/rooms');
     }
   };

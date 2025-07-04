@@ -43,6 +43,7 @@ export const UserProvider = ({ children }) => {
   };
 
   const joinRoom = (roomId) => {
+    console.log(`UserContext: Joining room ${roomId}`);
     setRoom(roomId);
     setIsRoomCreator(false);
   };

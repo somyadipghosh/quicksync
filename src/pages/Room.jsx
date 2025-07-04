@@ -8,7 +8,7 @@ import CopyButton from '../components/ui/CopyButton';
 
 const Room = () => {
   const { roomId } = useParams();
-  const { user } = useUserContext();
+  const { user, room, joinRoom } = useUserContext();
   const { 
     messages, 
     roomUsers, 
@@ -161,9 +161,18 @@ const Room = () => {
     e.target.value = '';
   };
 
+  // Set the room in UserContext when component mounts with roomId from URL
+  useEffect(() => {
+    if (user && roomId && room !== roomId) {
+      console.log(`Setting room from URL: ${roomId} (current room: ${room})`);
+      joinRoom(roomId);
+    }
+  }, [user, roomId, room, joinRoom]);
+
   // Redirect to welcome page if user hasn't set their name, but preserve the room ID
   useEffect(() => {
     if (!user && roomId) {
+      console.log(`No user found, redirecting to welcome with room: ${roomId}`);
       navigate(`/welcome?room=${roomId}`);
     }
   }, [user, roomId, navigate]);

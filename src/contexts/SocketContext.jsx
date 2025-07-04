@@ -189,7 +189,16 @@ export const SocketProvider = ({ children }) => {
     };
   }, [socket]);  // Room management
   useEffect(() => {
+    console.log('SocketContext room management effect:', {
+      socket: !!socket,
+      isConnected,
+      userId: user?.id,
+      userName: user?.name,
+      room
+    });
+
     if (!socket || !isConnected || !user?.id || !user?.name || !room) {
+      console.log('Skipping room join - missing requirements');
       return;
     }
 
