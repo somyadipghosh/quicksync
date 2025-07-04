@@ -9,9 +9,19 @@ import CopyButton from '../components/ui/CopyButton';
 const Room = () => {
   const { roomId } = useParams();
   const { user } = useUserContext();
-  const { messages, roomUsers, sendMessage, shareDocument, isConnected, connectionError } = useSocketContext();
+  const { 
+    messages, 
+    roomUsers, 
+    typingUsers,
+    sendMessage, 
+    shareDocument, 
+    startTyping,
+    stopTyping,
+    isConnected, 
+    connectionError 
+  } = useSocketContext();
+  
   const [messageInput, setMessageInput] = useState('');
-  const [typingUsers, setTypingUsers] = useState([]);
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
   const typingTimeoutRef = useRef(null);
@@ -57,11 +67,58 @@ const Room = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Cleanup typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const handleSendMessage = (e) => {
     e.preventDefault();
     if (messageInput.trim() && sendMessage) {
       sendMessage(messageInput.trim());
       setMessageInput('');
+      if (stopTyping) stopTyping(); // Stop typing when message is sent
+    }
+  };
+
+  // Handle typing indicators
+  const handleTyping = () => {
+    if (!startTyping) return;
+    
+    startTyping();
+    
+    // Clear existing timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    // Auto-stop typing after 3 seconds of no activity
+    typingTimeoutRef.current = setTimeout(() => {
+      if (stopTyping) stopTyping();
+    }, 3000);
+  };
+
+  const handleStopTyping = () => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+    if (stopTyping) {
+      stopTyping();
+    }
+  };
+
+  // Handle input change with typing indicators
+  const handleInputChange = (e) => {
+    setMessageInput(e.target.value);
+    if (e.target.value.length > 0) {
+      handleTyping();
+    } else {
+      handleStopTyping();
     }
   };
 
@@ -129,20 +186,33 @@ const Room = () => {
               <input
                 type="text"
                 value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
+                onChange={handleInputChange}
+                onBlur={handleStopTyping}
                 className="flex-1 border rounded-l-lg p-2"
                 placeholder="Type a message..."
+                disabled={!isConnected}
               />
               <input type="file" onChange={handleFileUpload} className="hidden" id="file-upload" />
-              <label htmlFor="file-upload" className="cursor-pointer p-2">
+              <label htmlFor="file-upload" className="cursor-pointer p-2 hover:bg-gray-100 border-t border-b">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
               </label>
-              <Button type="submit" className="rounded-r-lg">Send</Button>
+              <Button type="submit" className="rounded-r-lg" disabled={!isConnected || !messageInput.trim()}>
+                Send
+              </Button>
             </form>
+            
+            {/* Connection status */}
+            {!isConnected && (
+              <div className="text-center text-red-500 text-sm mt-2">
+                {connectionError || 'Disconnected - attempting to reconnect...'}
+              </div>
+            )}
+            
+            {/* Typing indicators */}
             <div className="h-5 mt-1">
-              {typingUsers.length > 0 && (
+              {typingUsers && typingUsers.length > 0 && (
                 <p className="text-sm text-gray-500 italic">
-                  {typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...
+                  {typingUsers.filter(u => u !== user?.name).join(', ')} {typingUsers.filter(u => u !== user?.name).length === 1 ? 'is' : 'are'} typing...
                 </p>
               )}
             </div>
