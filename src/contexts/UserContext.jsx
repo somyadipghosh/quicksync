@@ -7,7 +7,7 @@ export const useUserContext = () => useContext(UserContext);
 // Helper functions for localStorage
 const loadUserData = () => {
   try {
-    const userData = localStorage.getItem('quicksync_user');
+    const userData = localStorage.getItem('fastsync_user');
     return userData ? JSON.parse(userData) : null;
   } catch (err) {
     console.error("Error loading user data from localStorage:", err);
@@ -23,7 +23,7 @@ export const UserProvider = ({ children }) => {
   // Persist user data to localStorage when it changes
   useEffect(() => {
     if (user) {
-      localStorage.setItem('quicksync_user', JSON.stringify(user));
+      localStorage.setItem('fastsync_user', JSON.stringify(user));
     }
   }, [user]);
 

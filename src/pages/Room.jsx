@@ -161,6 +161,13 @@ const Room = () => {
     e.target.value = '';
   };
 
+  // Redirect to welcome page if user hasn't set their name, but preserve the room ID
+  useEffect(() => {
+    if (!user && roomId) {
+      navigate(`/welcome?room=${roomId}`);
+    }
+  }, [user, roomId, navigate]);
+
   if (!user) return null;
 
   return (
@@ -233,7 +240,6 @@ const Room = () => {
                 onChange={handleFileUpload} 
                 className="hidden" 
                 id="file-upload"
-                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
               />
               <label 
                 htmlFor="file-upload" 

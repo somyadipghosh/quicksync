@@ -10,14 +10,16 @@ A modern, production-ready real-time chat application built with React, Vite, No
 2. **Create a new room** or **join existing** with room ID
 3. **Share the room link** with others using the "Share Room Link" button
 4. **Start chatting** - messages appear instantly
-5. **Share files** by clicking the attachment icon (supports images, documents, up to 10MB)
+5. **Share files** by clicking the attachment icon (supports all file types, up to 10MB)
 6. **See typing indicators** when others are typing
 7. **Copy room link** from the room header to invite more people
+
+**🔗 Direct Room Access:** When someone clicks your shared room link, they'll be prompted to enter their name and then automatically join the room!
 
 ## ✨ Features
 
 - 🚀 **Real-time messaging** - Instant message delivery using WebSocket connections
-- 📎 **File sharing** - Share images, documents, and other files instantly (up to 10MB)
+- 📎 **File sharing** - Share any file type instantly (up to 10MB)
 - ⌨️ **Typing indicators** - See when others are typing in real-time
 - 👥 **User presence** - Track who's online in each room
 - 🏠 **Room-based chat** - Create and join different chat rooms with unique IDs

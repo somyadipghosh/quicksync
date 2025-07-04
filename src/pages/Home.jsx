@@ -12,7 +12,7 @@ const Home = () => {
     <Layout>
       <div className="max-w-3xl mx-auto text-center">
         <h2 className="text-3xl font-extrabold text-gray-900 sm:text-4xl mb-6">
-          Welcome to QuickSync
+          Welcome to FastSync
         </h2>
         <p className="text-lg text-gray-600 mb-8">
           Share documents and chat in real-time with your team. No login required!
