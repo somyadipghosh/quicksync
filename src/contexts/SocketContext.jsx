@@ -1,12 +1,16 @@
-import { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useMemo, useContext, useEffect, useState, useRef } from 'react';
+import { io } from 'socket.io-client';
 import { useUserContext } from './UserContext';
 import swMessenger from '../utils/serviceWorkerMessenger';
 
-const SocketContext = createContext();
+export const SocketContext = createContext(null);
 
 export const useSocketContext = () => useContext(SocketContext);
 
-export const SocketProvider = ({ children }) => {  const [isConnected, setIsConnected] = useState(false);
+export const SocketProvider = ({ children }) => {
+  const socket = useMemo(() => io('http://localhost:5000'), []);
+  
+  const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
   const [messages, setMessages] = useState([]);
   const [roomUsers, setRoomUsers] = useState([]);
@@ -667,6 +671,7 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
       swMessenger.sendMessage('endRoom', { roomId: room }, room);
     }
   };
+  
   return (
     <SocketContext.Provider value={{ 
       isConnected, 
@@ -675,7 +680,8 @@ export const SocketProvider = ({ children }) => {  const [isConnected, setIsConn
       roomUsers, 
       sendMessage,
       shareDocument,
-      endRoom
+      endRoom,
+      socket
     }}>
       {children}
     </SocketContext.Provider>

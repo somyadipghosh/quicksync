@@ -7,14 +7,19 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start:backend": "node server.js"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
     "next": "^15.3.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.5.3",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.8.1",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

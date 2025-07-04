@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { SocketProvider } from './contexts/SocketContext';
+import { UserProvider } from './contexts/UserContext';
 
 // Initialize Service Worker if browser supports it
 if ('serviceWorker' in navigator) {
@@ -18,6 +20,10 @@ if ('serviceWorker' in navigator) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <UserProvider>
+      <SocketProvider>
+        <App />
+      </SocketProvider>
+    </UserProvider>
   </StrictMode>,
 )
