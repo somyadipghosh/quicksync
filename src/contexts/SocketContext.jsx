@@ -19,14 +19,28 @@ const getServerUrl = () => {
   return 'http://localhost:5000';
 };
 
+// Get Socket.IO path based on environment
+const getSocketPath = () => {
+  if (typeof window !== 'undefined') {
+    // In production (Vercel), use the API path
+    if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return '/api/socket.js';
+    }
+  }
+  // Development - use default Socket.IO path
+  return '/socket.io/';
+};
+
 export const SocketProvider = ({ children }) => {
   const socket = useMemo(() => io(getServerUrl(), {
+    path: getSocketPath(),
     autoConnect: true,
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionAttempts: 5,
     timeout: 20000,
-    forceNew: false
+    forceNew: false,
+    transports: ['polling', 'websocket']
   }), []);
   
   const [isConnected, setIsConnected] = useState(false);

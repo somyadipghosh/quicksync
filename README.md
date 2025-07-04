@@ -170,17 +170,26 @@ vercel --prod
 
 ### Deployment Troubleshooting
 
-**Common Vercel Issues:**
+**Socket.IO on Vercel:**
+- ✅ Updated to use Vercel-compatible serverless Socket.IO handler
+- ✅ Configured proper API routing for WebSocket connections
+- ✅ Uses polling transport as primary method (WebSocket as fallback)
+- ✅ Automatic path detection for development vs production
+
+**Common Vercel Issues Fixed:**
 - ✅ Removed Next.js dependency that was causing framework confusion
-- ✅ Configured `framework: null` to use Vite instead of Next.js detection
-- ✅ Proper static asset routing for SPA (Single Page Application)
-- ✅ Socket.IO serverless function wrapper
+- ✅ Configured proper serverless function for Socket.IO
+- ✅ Set correct transport protocols for Vercel environment
+- ✅ Added proper CORS configuration for production
 
 **If deployment fails:**
 1. Check build logs in Vercel dashboard
 2. Ensure `dist` folder is created during build
-3. Verify `api/socket.js` is present
+3. Verify `api/socket.js` is present and configured correctly
 4. Clear Vercel cache and redeploy
+5. Check browser console for WebSocket connection errors
+
+**Note:** Due to Vercel's serverless nature, Socket.IO uses polling transport primarily. Room data resets on serverless function cold starts, but connections will automatically reconnect.
 
 ### Other Deployment Options
 
