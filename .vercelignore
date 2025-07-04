@@ -1,8 +1,45 @@
-# Files and directories to ignore during Vercel builds
-.vercel
+# Development dependencies and build artifacts
+node_modules
+.git
+.gitignore
+
+# Environment files (except production)
 .env.local
 .env.development
-README.md
-docs/
+.env.development.local
+.env.test.local
+
+# Build artifacts that shouldn't be in source
+.vite
+.next
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+
+# Logs and debug files
+logs
 *.log
-.git/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Vercel specific
+.vercel

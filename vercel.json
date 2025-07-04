@@ -23,8 +23,12 @@
       "dest": "/api/socket.js"
     },
     {
-      "src": "/(.*)",
+      "src": "/(.*\\.(js|css|ico|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot))",
       "dest": "/dist/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/dist/index.html"
     }
   ],
   "functions": {
@@ -32,7 +36,8 @@
       "maxDuration": 30
     }
   },
-  "env": {
-    "NODE_ENV": "production"
-  }
+  "framework": null,
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install"
 }

@@ -145,11 +145,11 @@ FastSync/
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/somyadipghosh/FastSync)
 
-**📦 GitHub Integration:**
+**📦 GitHub Integration (Recommended):**
 1. Push your code to GitHub
 2. Go to [vercel.com](https://vercel.com) and import your repository
-3. Vercel automatically:
-   - Builds the React frontend
+3. Vercel automatically detects Vite configuration and:
+   - Builds the React frontend using `npm run vercel-build`
    - Deploys backend as serverless functions
    - Configures Socket.IO routing
    - Provides HTTPS and custom domains
@@ -162,17 +162,31 @@ vercel login
 vercel --prod
 ```
 
+**🔧 Manual Configuration (if needed):**
+- Build Command: `npm run vercel-build`
+- Output Directory: `dist`
+- Install Command: `npm install`
+- Node.js Version: 18.x
+
+### Deployment Troubleshooting
+
+**Common Vercel Issues:**
+- ✅ Removed Next.js dependency that was causing framework confusion
+- ✅ Configured `framework: null` to use Vite instead of Next.js detection
+- ✅ Proper static asset routing for SPA (Single Page Application)
+- ✅ Socket.IO serverless function wrapper
+
+**If deployment fails:**
+1. Check build logs in Vercel dashboard
+2. Ensure `dist` folder is created during build
+3. Verify `api/socket.js` is present
+4. Clear Vercel cache and redeploy
+
 ### Other Deployment Options
 
 #### Netlify + Railway
 - **Frontend**: Deploy to Netlify
 - **Backend**: Deploy to Railway or Heroku
-
-#### Docker Deployment
-```bash
-docker build -t fastsync .
-docker run -p 5000:5000 fastsync
-```
 
 ## ⚙️ Configuration
 
