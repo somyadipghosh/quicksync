@@ -124,18 +124,41 @@ const Room = () => {
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
-    if (!file || !shareDocument) return;
+    if (!file || !shareDocument) {
+      console.log('No file selected or shareDocument not available');
+      return;
+    }
+
+    // Check file size (limit to 10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      alert('File too large. Maximum size is 10MB.');
+      return;
+    }
+
+    console.log('Processing file:', file.name, file.type, formatFileSize(file.size));
 
     const reader = new FileReader();
     reader.onload = () => {
-      shareDocument({
+      const fileData = {
         name: file.name,
         type: file.type,
         size: file.size,
         data: reader.result,
-      });
+      };
+      console.log('File processed, sharing document...');
+      shareDocument(fileData);
     };
+    
+    reader.onerror = () => {
+      console.error('Error reading file');
+      alert('Error reading file. Please try again.');
+    };
+    
     reader.readAsDataURL(file);
+    
+    // Clear the file input
+    e.target.value = '';
   };
 
   if (!user) return null;
@@ -145,8 +168,15 @@ const Room = () => {
       <div className="max-w-4xl mx-auto">
         <div className="bg-white shadow-md rounded-lg">
           <div className="p-4 border-b">
-            <h2 className="text-2xl font-bold">Room: {roomId}</h2>
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-2xl font-bold">Room: {roomId}</h2>
+              <CopyButton text={window.location.href} label="Share Room Link" />
+            </div>
             <p className="text-sm text-gray-500">Users: {roomUsers && roomUsers.length > 0 ? roomUsers.map(u => u.username || u.name).join(', ') : 'No users'}</p>
+            <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
+              <span className="font-semibold">Room Link:</span> 
+              <span className="text-blue-600 break-all ml-1">{window.location.href}</span>
+            </div>
           </div>
           <div className="p-4 h-96 overflow-y-auto">
             {messages.map((msg, index) => (
@@ -156,15 +186,21 @@ const Room = () => {
                 ) : msg.file ? (
                   <div>
                     <p className={`font-bold ${msg.username === user.name ? 'text-blue-500' : 'text-green-500'}`}>{msg.username}</p>
-                    <div className="mt-2">
+                    <div className="mt-2 p-3 border rounded-lg bg-gray-50">
                       {msg.file.type.startsWith('image/') ? (
-                        <img src={msg.file.data} alt={msg.file.name} className="max-w-xs rounded-lg" />
+                        <div>
+                          <img src={msg.file.data} alt={msg.file.name} className="max-w-xs rounded-lg mb-2" />
+                          <p className="text-sm text-gray-600">{msg.file.name} ({formatFileSize(msg.file.size)})</p>
+                        </div>
                       ) : (
                         <div className="flex items-center">
-                          <span className="text-2xl mr-2">{getFileIcon(msg.file.type)}</span>
-                          <a href={msg.file.data} download={msg.file.name} className="text-blue-500 hover:underline">
-                            {msg.file.name}
-                          </a>
+                          <span className="text-2xl mr-3">{getFileIcon(msg.file.type)}</span>
+                          <div className="flex-1">
+                            <a href={msg.file.data} download={msg.file.name} className="text-blue-500 hover:underline font-semibold">
+                              {msg.file.name}
+                            </a>
+                            <p className="text-sm text-gray-500">{formatFileSize(msg.file.size)}</p>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -192,9 +228,21 @@ const Room = () => {
                 placeholder="Type a message..."
                 disabled={!isConnected}
               />
-              <input type="file" onChange={handleFileUpload} className="hidden" id="file-upload" />
-              <label htmlFor="file-upload" className="cursor-pointer p-2 hover:bg-gray-100 border-t border-b">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+              <input 
+                type="file" 
+                onChange={handleFileUpload} 
+                className="hidden" 
+                id="file-upload"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+              />
+              <label 
+                htmlFor="file-upload" 
+                className="cursor-pointer p-2 hover:bg-gray-100 border-t border-b border-r bg-white transition-colors duration-200 flex items-center justify-center"
+                title="Upload file"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
               </label>
               <Button type="submit" className="rounded-r-lg" disabled={!isConnected || !messageInput.trim()}>
                 Send

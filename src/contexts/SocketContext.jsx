@@ -164,6 +164,11 @@ export const SocketProvider = ({ children }) => {
       setTypingUsers(prev => prev.filter(user => user !== username));
     };
 
+    const handleError = (error) => {
+      console.error('Socket error:', error);
+      setConnectionError(error.message || 'An error occurred');
+    };
+
     // Attach message event listeners
     socket.on('receive_message', handleReceiveMessage);
     socket.on('message_history', handleMessageHistory);
@@ -171,6 +176,7 @@ export const SocketProvider = ({ children }) => {
     socket.on('user_left', handleUserLeft);
     socket.on('user_typing', handleUserTyping);
     socket.on('user_stopped_typing', handleUserStoppedTyping);
+    socket.on('error', handleError);
 
     return () => {
       socket.off('receive_message', handleReceiveMessage);
@@ -179,6 +185,7 @@ export const SocketProvider = ({ children }) => {
       socket.off('user_left', handleUserLeft);
       socket.off('user_typing', handleUserTyping);
       socket.off('user_stopped_typing', handleUserStoppedTyping);
+      socket.off('error', handleError);
     };
   }, [socket]);  // Room management
   useEffect(() => {
@@ -236,17 +243,25 @@ export const SocketProvider = ({ children }) => {
   // Document sharing function
   const shareDocument = useCallback((document) => {
     if (!socket || !isConnected || !user?.name || !room || !document) {
-      console.error('Cannot share document: Missing requirements');
+      console.error('Cannot share document: Missing requirements', {
+        socket: !!socket,
+        isConnected,
+        userName: user?.name,
+        room,
+        document: !!document
+      });
       return;
     }
 
-    console.log('Sharing document:', document.name);
+    console.log('Sharing document:', document.name, 'Size:', document.size, 'Type:', document.type);
     
     socket.emit('send_document', {
       roomId: room,
       file: document,
       username: user.name
     });
+    
+    console.log('Document share event emitted');
   }, [socket, isConnected, user?.name, room]);
 
   // Typing indicators

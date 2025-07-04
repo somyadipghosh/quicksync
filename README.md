@@ -4,14 +4,25 @@
 
 A modern, production-ready real-time chat application built with React, Vite, Node.js, Express, and Socket.IO. Features instant messaging, file sharing, typing indicators, and seamless deployment.
 
+## 📱 Usage Guide
+
+1. **Enter your name** on the welcome screen
+2. **Create a new room** or **join existing** with room ID
+3. **Share the room link** with others using the "Share Room Link" button
+4. **Start chatting** - messages appear instantly
+5. **Share files** by clicking the attachment icon (supports images, documents, up to 10MB)
+6. **See typing indicators** when others are typing
+7. **Copy room link** from the room header to invite more people
+
 ## ✨ Features
 
 - 🚀 **Real-time messaging** - Instant message delivery using WebSocket connections
-- 📎 **File sharing** - Share images, documents, and other files instantly with preview
+- 📎 **File sharing** - Share images, documents, and other files instantly (up to 10MB)
 - ⌨️ **Typing indicators** - See when others are typing in real-time
 - 👥 **User presence** - Track who's online in each room
 - 🏠 **Room-based chat** - Create and join different chat rooms with unique IDs
-- 📜 **Message history** - Persistent message history per room
+- 🔗 **Room sharing** - Share room links to invite others instantly
+- 📜 **Message history** - Persistent message history per room (1000 messages)
 - 📱 **Responsive design** - Works perfectly on desktop, tablet, and mobile
 - 🔒 **Production ready** - Optimized for deployment with proper error handling
 - ⚡ **Auto-reconnection** - Seamless reconnection when connection drops
