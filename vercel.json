@@ -10,7 +10,10 @@
     },
     {
       "src": "api/socket.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "maxDuration": 30
+      }
     }
   ],
   "routes": [
@@ -31,11 +34,6 @@
       "dest": "/dist/index.html"
     }
   ],
-  "functions": {
-    "api/socket.js": {
-      "maxDuration": 30
-    }
-  },
   "framework": null,
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "dist",
