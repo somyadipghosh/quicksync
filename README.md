@@ -1,6 +1,6 @@
 # FastSync 💬 - Real-time Chat Application
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/FastSync)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/somyadipghosh/FastSync)
 
 A modern, production-ready real-time chat application built with React, Vite, Node.js, Express, and Socket.IO. Features instant messaging, file sharing, typing indicators, and seamless deployment.
 
@@ -29,7 +29,7 @@ A modern, production-ready real-time chat application built with React, Vite, No
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/FastSync.git
+   git clone https://github.com/somyadipghosh/FastSync.git
    cd FastSync
    ```
 
